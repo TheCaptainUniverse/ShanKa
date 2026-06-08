@@ -5,19 +5,23 @@ import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { Check, ChevronDown, Copy, LoaderCircle, RefreshCw, Replace, Search, Undo2, X } from "lucide-vue-next";
 import { useI18n } from "@/i18n/useI18n";
+import {
+  hudErrorMessageKey,
+  hudMessageKey,
+  previewActionCommand,
+  shouldResetEditablePreviewText,
+  type PreviewAction,
+} from "@/hud/state";
 import { useHud } from "@/composables/useHud";
 import {
   BUILT_IN_PERSONAS,
   DEFAULT_SAFE_PERSONA_ID,
   TAURI_EVENTS,
-  type ErrorCode,
   type HudUpdate,
   type PersonaConfig,
   type PersonaDefinition,
 } from "@shared";
 import type { TranslationKey } from "@/i18n/messages";
-
-type PreviewAction = "copy" | "replace" | "regenerate";
 
 const { t } = useI18n();
 const { currentHud, setHud } = useHud();
@@ -32,23 +36,7 @@ const undoCopying = ref(false);
 let unlistenHud: UnlistenFn | null = null;
 let unlistenFocus: UnlistenFn | null = null;
 
-const message = computed(() => {
-  switch (currentHud.value.status) {
-    case "refining":
-      return t("hud.refining");
-    case "replaced":
-    case "undo_available":
-      return t("hud.replaced");
-    case "error":
-      return errorMessage(currentHud.value.errorCode);
-    case "saved_to_clipboard":
-      return t("hud.savedToClipboard");
-    case "ready":
-    case "idle":
-    default:
-      return t("hud.refining");
-  }
-});
+const message = computed(() => t(hudMessageKey(currentHud.value)));
 
 const previewText = computed(() => currentHud.value.message ?? "");
 const previewId = computed(() => currentHud.value.previewId ?? null);
@@ -57,7 +45,7 @@ const isError = computed(() => currentHud.value.status === "error");
 const isPreview = computed(() => currentHud.value.status === "preview" && previewText.value !== "");
 const isUndoAvailable = computed(() => currentHud.value.status === "undo_available");
 const previewErrorMessage = computed(() =>
-  isPreview.value && currentHud.value.errorCode ? errorMessage(currentHud.value.errorCode) : "",
+  isPreview.value && currentHud.value.errorCode ? t(hudErrorMessageKey(currentHud.value.errorCode)) : "",
 );
 const selectedPersona = computed(
   () =>
@@ -135,7 +123,7 @@ function applyHudUpdate(update: HudUpdate) {
   undoCopying.value = false;
 
   if (update.status === "preview") {
-    if (!update.errorCode || update.previewId !== previousPreviewId) {
+    if (shouldResetEditablePreviewText(update, previousPreviewId)) {
       editablePreviewText.value = update.message ?? "";
     }
     void loadPersonaConfig();
@@ -151,26 +139,6 @@ function applyHudUpdate(update: HudUpdate) {
   }
 }
 
-function errorMessage(errorCode?: ErrorCode | null) {
-  switch (errorCode) {
-    case "NO_TEXT_SELECTED":
-      return t("hud.error.noTextSelected");
-    case "NETWORK_TIMEOUT":
-      return t("hud.error.networkTimeout");
-    case "API_CONFIG_MISSING":
-      return t("hud.error.apiConfigMissing");
-    case "CLIPBOARD_ACCESS_FAILED":
-      return t("hud.error.clipboardAccessFailed");
-    case "PASTE_BLOCKED":
-      return t("hud.error.pasteBlocked");
-    case "PLATFORM_PERMISSION_REQUIRED":
-      return t("hud.error.platformPermissionRequired");
-    case "API_ERROR":
-    default:
-      return t("hud.error.apiError");
-  }
-}
-
 async function runPreviewAction(action: PreviewAction, personaId = selectedPersonaId.value) {
   if (!previewId.value || busyAction.value) {
     return;
@@ -179,7 +147,7 @@ async function runPreviewAction(action: PreviewAction, personaId = selectedPerso
   busyAction.value = action;
 
   try {
-    await invoke(commandForAction(action), {
+    await invoke(previewActionCommand(action), {
       previewId: previewId.value,
       ...(action === "copy" || action === "replace" ? { editedText: editablePreviewText.value } : {}),
       ...(action === "regenerate" ? { personaId } : {}),
@@ -191,17 +159,6 @@ async function runPreviewAction(action: PreviewAction, personaId = selectedPerso
   } catch (error) {
     console.warn(`[hud] failed to ${action} Safe Mode preview`, error);
     busyAction.value = null;
-  }
-}
-
-function commandForAction(action: PreviewAction) {
-  switch (action) {
-    case "copy":
-      return "copy_safe_preview";
-    case "replace":
-      return "replace_safe_preview";
-    case "regenerate":
-      return "regenerate_safe_preview";
   }
 }
 
