@@ -93,6 +93,18 @@ try {
   }
 
   Write-Host "[release-smoke] second launch exited while first instance stayed alive"
+
+  if (-not $process.CloseMainWindow()) {
+    throw "Could not send close request to the release executable main window."
+  }
+
+  Start-Sleep -Seconds 3
+  $process.Refresh()
+  if ($process.HasExited) {
+    throw "Release executable exited after main window close request with code $($process.ExitCode). Close-to-tray behavior is not working."
+  }
+
+  Write-Host "[release-smoke] close request hid the settings window without exiting"
 }
 finally {
   if ($null -ne $secondProcess) {

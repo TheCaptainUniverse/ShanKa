@@ -20,6 +20,7 @@ struct HudLayout {
 }
 
 pub fn setup(app: &tauri::AppHandle) -> tauri::Result<()> {
+    install_settings_window_close_handler(app);
     create_hud_window(app)?;
     println!("[window] settings and HUD window manager ready");
     Ok(())
@@ -91,6 +92,23 @@ pub fn show_settings_window(app: &tauri::AppHandle) {
     if let Err(error) = window.set_focus() {
         println!("[window] failed to focus settings window: {error}");
     }
+}
+
+fn install_settings_window_close_handler(app: &tauri::AppHandle) {
+    let Some(window) = app.get_webview_window(MAIN_WINDOW_LABEL) else {
+        println!("[window] settings window not found; close-to-tray handler not installed");
+        return;
+    };
+    let window_for_event = window.clone();
+
+    window.on_window_event(move |event| {
+        if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+            api.prevent_close();
+            if let Err(error) = window_for_event.hide() {
+                println!("[window] failed to hide settings window on close request: {error}");
+            }
+        }
+    });
 }
 
 fn create_hud_window(app: &tauri::AppHandle) -> tauri::Result<()> {
