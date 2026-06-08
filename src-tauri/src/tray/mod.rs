@@ -1,10 +1,8 @@
 use tauri::{
     menu::{Menu, MenuItem},
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
-    Manager,
 };
 
-const MAIN_WINDOW_LABEL: &str = "main";
 const OPEN_SETTINGS_ID: &str = "open_settings";
 const QUIT_ID: &str = "quit";
 
@@ -19,7 +17,7 @@ pub fn setup(app: &tauri::AppHandle) -> tauri::Result<()> {
         .menu(&menu)
         .show_menu_on_left_click(false)
         .on_menu_event(|app, event| match event.id().as_ref() {
-            OPEN_SETTINGS_ID => show_settings_window(app),
+            OPEN_SETTINGS_ID => crate::window::show_settings_window(app),
             QUIT_ID => app.exit(0),
             _ => {}
         })
@@ -30,7 +28,7 @@ pub fn setup(app: &tauri::AppHandle) -> tauri::Result<()> {
                 ..
             } = event
             {
-                show_settings_window(tray.app_handle());
+                crate::window::show_settings_window(tray.app_handle());
             }
         });
 
@@ -41,17 +39,4 @@ pub fn setup(app: &tauri::AppHandle) -> tauri::Result<()> {
     tray.build(app)?;
     println!("[tray] tray controller ready");
     Ok(())
-}
-
-fn show_settings_window(app: &tauri::AppHandle) {
-    let Some(window) = app.get_webview_window(MAIN_WINDOW_LABEL) else {
-        return;
-    };
-
-    if let Err(error) = window.show() {
-        println!("[tray] failed to show settings window: {error}");
-    }
-    if let Err(error) = window.set_focus() {
-        println!("[tray] failed to focus settings window: {error}");
-    }
 }

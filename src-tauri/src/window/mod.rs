@@ -5,6 +5,7 @@ use std::{
 };
 use tauri::{Manager, WebviewUrl, WebviewWindowBuilder};
 
+const MAIN_WINDOW_LABEL: &str = "main";
 const HUD_WINDOW_LABEL: &str = "hud";
 const HUD_HIDE_DELAY: Duration = Duration::from_millis(2_200);
 
@@ -76,6 +77,19 @@ pub fn hide_hud(app: &tauri::AppHandle) {
         if let Err(error) = window.set_focusable(false) {
             println!("[window] failed to reset HUD focusable state: {error}");
         }
+    }
+}
+
+pub fn show_settings_window(app: &tauri::AppHandle) {
+    let Some(window) = app.get_webview_window(MAIN_WINDOW_LABEL) else {
+        return;
+    };
+
+    if let Err(error) = window.show() {
+        println!("[window] failed to show settings window: {error}");
+    }
+    if let Err(error) = window.set_focus() {
+        println!("[window] failed to focus settings window: {error}");
     }
 }
 

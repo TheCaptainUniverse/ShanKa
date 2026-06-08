@@ -6,7 +6,8 @@ Shanka is a Tauri + Vue + Bun desktop app for system-level AI text refinement.
 
 Shanka runs in the background and refines selected text from other desktop apps.
 The first launch defaults to Chinese UI, and the language can be changed in
-Settings.
+Settings. Launching Shanka again activates the existing instance instead of
+starting a second background process.
 
 Default hotkeys:
 
@@ -78,8 +79,8 @@ bun run release:smoke
 
 - No selected text: make sure the target app has an active text selection, then
   try Safe Mode again.
-- Hotkey registration failed: another app or Shanka instance may already use the
-  shortcut. Close duplicate Shanka processes or record a different shortcut.
+- Hotkey registration failed: another app may already use the shortcut. Record a
+  different shortcut from Settings.
 - Paste failed: if the target app is elevated on Windows, Shanka keeps the result
   on the clipboard and shows a saved-to-clipboard state.
 - macOS input does not work: enable Accessibility permission for Shanka in

@@ -153,6 +153,10 @@ fn dismiss_safe_preview(app: tauri::AppHandle, preview_id: Option<u64>) {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+            println!("[app] existing Shanka instance activated");
+            crate::window::show_settings_window(app);
+        }))
         .plugin(tauri_plugin_opener::init())
         .setup(|app| {
             let handle = app.handle();

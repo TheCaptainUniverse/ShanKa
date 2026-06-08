@@ -67,6 +67,7 @@ Assert-BundleExists -Directory $msiDir -Pattern "Shanka_*_x64_en-US.msi" -Label 
 Assert-BundleExists -Directory $nsisDir -Pattern "Shanka_*_x64-setup.exe" -Label "NSIS"
 
 $process = $null
+$secondProcess = $null
 try {
   $process = Start-Process -FilePath $releaseExe -WorkingDirectory $releaseDir -PassThru -WindowStyle Hidden
   Start-Sleep -Seconds 5
@@ -77,8 +78,31 @@ try {
   }
 
   Write-Host "[release-smoke] release executable started successfully with pid $($process.Id)"
+
+  $secondProcess = Start-Process -FilePath $releaseExe -WorkingDirectory $releaseDir -PassThru -WindowStyle Hidden
+  Start-Sleep -Seconds 3
+  $secondProcess.Refresh()
+  $process.Refresh()
+
+  if (-not $secondProcess.HasExited) {
+    throw "Second release executable instance kept running with pid $($secondProcess.Id). Single-instance protection is not working."
+  }
+
+  if ($process.HasExited) {
+    throw "First release executable exited after second launch with code $($process.ExitCode)."
+  }
+
+  Write-Host "[release-smoke] second launch exited while first instance stayed alive"
 }
 finally {
+  if ($null -ne $secondProcess) {
+    $secondProcess.Refresh()
+    if (-not $secondProcess.HasExited) {
+      Stop-Process -Id $secondProcess.Id -Force
+      Write-Host "[release-smoke] stopped second pid $($secondProcess.Id)"
+    }
+  }
+
   if ($null -ne $process) {
     $process.Refresh()
     if (-not $process.HasExited) {
@@ -88,4 +112,3 @@ finally {
     }
   }
 }
-
