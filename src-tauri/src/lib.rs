@@ -160,13 +160,14 @@ pub fn run() {
             println!("[app] existing Shanka instance activated");
             crate::window::show_settings_window(app);
         }))
+        .plugin(autostart::plugin())
         .plugin(tauri_plugin_opener::init())
         .setup(|app| {
             let handle = app.handle();
             platform::setup(handle)?;
             window::setup(handle)?;
             tray::setup(handle)?;
-            autostart::setup(handle)?;
+            autostart::setup(handle);
             config::setup(handle)?;
             history::setup(handle)?;
             clipboard::setup(handle)?;

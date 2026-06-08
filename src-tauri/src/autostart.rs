@@ -1,12 +1,11 @@
-use tauri_plugin_autostart::{MacosLauncher, ManagerExt};
+use tauri_plugin_autostart::ManagerExt;
 
-pub fn setup(app: &tauri::AppHandle) -> tauri::Result<()> {
-    app.plugin(tauri_plugin_autostart::init(
-        MacosLauncher::LaunchAgent,
-        None,
-    ))?;
+pub fn plugin<R: tauri::Runtime>() -> tauri::plugin::TauriPlugin<R> {
+    tauri_plugin_autostart::Builder::new().build()
+}
+
+pub fn setup(_app: &tauri::AppHandle) {
     println!("[autostart] launch-at-login controller ready");
-    Ok(())
 }
 
 pub fn is_enabled(app: &tauri::AppHandle) -> Result<bool, String> {
