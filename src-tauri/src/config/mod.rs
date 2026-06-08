@@ -395,7 +395,7 @@ fn to_tauri_error(error: ConfigError) -> tauri::Error {
 
 #[cfg(test)]
 mod tests {
-    use super::AppSettingsConfig;
+    use super::{AppSettingsConfig, HotkeyConfig};
 
     #[test]
     fn app_settings_do_not_serialize_plaintext_api_key() {
@@ -410,5 +410,33 @@ mod tests {
         assert!(!json.contains("sk-test-secret"));
         assert!(!json.contains("\"api_key\""));
         assert!(json.contains("api_key_ref"));
+    }
+
+    #[test]
+    fn hotkey_config_rejects_duplicate_shortcuts() {
+        let hotkeys = HotkeyConfig {
+            safe_mode: "Ctrl+Shift+KeyC".to_string(),
+            magic_mode: "Ctrl+Shift+KeyC".to_string(),
+        };
+
+        assert!(hotkeys.resolve().is_err());
+    }
+
+    #[test]
+    fn app_settings_normalized_trims_and_clamps_values() {
+        let settings = AppSettingsConfig {
+            provider: "  deepseek  ".to_string(),
+            base_url: " https://api.deepseek.com/ ".to_string(),
+            model: " deepseek-v4-flash ".to_string(),
+            timeout_ms: 250,
+            ..AppSettingsConfig::default()
+        };
+
+        let normalized = settings.normalized().expect("settings should normalize");
+
+        assert_eq!(normalized.provider, "deepseek");
+        assert_eq!(normalized.base_url, "https://api.deepseek.com");
+        assert_eq!(normalized.model, "deepseek-v4-flash");
+        assert_eq!(normalized.timeout_ms, 1_000);
     }
 }

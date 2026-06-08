@@ -175,3 +175,76 @@ fn persona_catalog() -> &'static PersonaCatalog {
             .expect("shared/personas.json must be valid persona catalog JSON")
     })
 }
+
+#[cfg(test)]
+mod tests {
+    use super::{normalize_config, resolve_persona, PersonaConfig, PersonaConfigItem};
+
+    #[test]
+    fn normalize_config_keeps_built_in_prompt_authoritative() {
+        let config = PersonaConfig {
+            items: vec![PersonaConfigItem {
+                id: "clean-correction".to_string(),
+                name: "Changed".to_string(),
+                system_prompt: "Changed prompt".to_string(),
+                enabled: false,
+                ..PersonaConfigItem::default()
+            }],
+            ..PersonaConfig::default()
+        };
+
+        let normalized = normalize_config(&config);
+        let clean = normalized
+            .items
+            .iter()
+            .find(|persona| persona.id == "clean-correction")
+            .expect("built-in clean correction persona should exist");
+
+        assert_eq!(clean.name, "Clean Correction");
+        assert_ne!(clean.system_prompt, "Changed prompt");
+        assert!(!clean.enabled);
+    }
+
+    #[test]
+    fn normalize_config_falls_back_when_default_is_disabled() {
+        let config = PersonaConfig {
+            default_safe_persona_id: "clean-correction".to_string(),
+            items: vec![PersonaConfigItem {
+                id: "clean-correction".to_string(),
+                name: "Clean Correction".to_string(),
+                system_prompt: "Prompt".to_string(),
+                enabled: false,
+                built_in: true,
+                ..PersonaConfigItem::default()
+            }],
+        };
+
+        let normalized = normalize_config(&config);
+
+        assert_ne!(normalized.default_safe_persona_id, "clean-correction");
+        assert!(normalized
+            .items
+            .iter()
+            .any(|persona| persona.id == normalized.default_safe_persona_id && persona.enabled));
+    }
+
+    #[test]
+    fn resolve_persona_can_use_custom_persona() {
+        let config = PersonaConfig {
+            items: vec![PersonaConfigItem {
+                id: "custom-friendly".to_string(),
+                name: "Friendly".to_string(),
+                system_prompt: "Make it friendlier.".to_string(),
+                enabled: true,
+                ..PersonaConfigItem::default()
+            }],
+            ..PersonaConfig::default()
+        };
+
+        let resolved = resolve_persona(&config, Some("custom-friendly"))
+            .expect("custom persona should resolve");
+
+        assert_eq!(resolved.name, "Friendly");
+        assert_eq!(resolved.system_prompt, "Make it friendlier.");
+    }
+}
