@@ -7,6 +7,7 @@
   --shanka-panel: 33 33 33;
   --shanka-input: 47 47 47;
   --shanka-success: 16 163 127;
+  --shanka-danger: 239 68 68;
   --shanka-primary: 255 255 255;
   --shanka-secondary: 228 228 231;
   --shanka-muted: 161 161 170;
@@ -29,6 +30,7 @@
   --shanka-panel: 255 255 255;
   --shanka-input: 239 239 237;
   --shanka-success: 16 163 127;
+  --shanka-danger: 220 38 38;
   --shanka-primary: 24 24 27;
   --shanka-secondary: 63 63 70;
   --shanka-muted: 113 113 122;
@@ -48,6 +50,14 @@ body {
   min-height: 100vh;
   background: rgb(var(--shanka-canvas));
   transition: background-color 160ms linear, color 160ms linear;
+}
+
+:root[data-window="hud"],
+:root[data-window="hud"] body,
+:root[data-window="hud"] #app {
+  min-width: 0;
+  overflow: hidden;
+  background: transparent;
 }
 
 button,

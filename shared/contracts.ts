@@ -5,6 +5,7 @@ export type RefineMode = (typeof REFINE_MODES)[number];
 export const HUD_STATUSES = [
   "idle",
   "refining",
+  "preview",
   "ready",
   "replaced",
   "error",
@@ -41,5 +42,7 @@ export interface RefineResponse {
 export interface HudUpdate {
   status: HudStatus;
   message?: string;
-  errorCode?: ErrorCode;
+  errorCode?: ErrorCode | null;
+  previewId?: number | null;
+  personaId?: string | null;
 }

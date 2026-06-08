@@ -10,6 +10,7 @@ export default {
           panel: "rgb(var(--shanka-panel) / <alpha-value>)",
           input: "rgb(var(--shanka-input) / <alpha-value>)",
           success: "rgb(var(--shanka-success) / <alpha-value>)",
+          danger: "rgb(var(--shanka-danger) / <alpha-value>)",
           primary: "rgb(var(--shanka-primary) / <alpha-value>)",
           secondary: "rgb(var(--shanka-secondary) / <alpha-value>)",
           muted: "rgb(var(--shanka-muted) / <alpha-value>)",

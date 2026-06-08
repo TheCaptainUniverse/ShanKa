@@ -1,7 +1,7 @@
 import { ref } from "vue";
 import type { HudUpdate } from "@shared";
 
-const currentHud = ref<HudUpdate>({ status: "idle" });
+const currentHud = ref<HudUpdate>({ status: "refining" });
 
 export function useHud() {
   function setHud(update: HudUpdate) {
