@@ -35,6 +35,7 @@ Build Windows packages with:
 
 ```bash
 bun run tauri build
+bun run release:smoke
 ```
 
 Current Windows outputs:
@@ -70,6 +71,7 @@ Before packaging a release, run:
 ```bash
 bun run check
 bun run tauri build
+bun run release:smoke
 ```
 
 ## Troubleshooting
