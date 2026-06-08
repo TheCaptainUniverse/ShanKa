@@ -8,7 +8,7 @@
     "dev:app": "tauri dev",
     "dev:web": "vite",
     "dev:server": "bun --watch server/src/index.ts",
-    "check": "bun run check:rust && bun run build",
+    "check": "bun run check:rust && bun test && bun run build",
     "check:rust": "cargo fmt --manifest-path src-tauri/Cargo.toml --check && cargo check --manifest-path src-tauri/Cargo.toml && cargo test --manifest-path src-tauri/Cargo.toml",
     "build": "bun run typecheck && vite build",
     "preview": "vite preview",
