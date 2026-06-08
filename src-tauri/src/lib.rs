@@ -75,16 +75,24 @@ fn set_hotkey_recording_active(active: bool) {
 }
 
 #[tauri::command]
-fn copy_safe_preview(app: tauri::AppHandle, preview_id: u64) -> Result<(), String> {
-    pipeline::copy_safe_preview(&app, preview_id).map_err(|error| {
+fn copy_safe_preview(
+    app: tauri::AppHandle,
+    preview_id: u64,
+    edited_text: Option<String>,
+) -> Result<(), String> {
+    pipeline::copy_safe_preview(&app, preview_id, edited_text).map_err(|error| {
         hud::error(&app, error.error_code());
         error.to_string()
     })
 }
 
 #[tauri::command]
-fn replace_safe_preview(app: tauri::AppHandle, preview_id: u64) -> Result<(), String> {
-    pipeline::replace_safe_preview(&app, preview_id).map_err(|error| {
+fn replace_safe_preview(
+    app: tauri::AppHandle,
+    preview_id: u64,
+    edited_text: Option<String>,
+) -> Result<(), String> {
+    pipeline::replace_safe_preview(&app, preview_id, edited_text).map_err(|error| {
         hud::error(&app, error.error_code());
         error.to_string()
     })

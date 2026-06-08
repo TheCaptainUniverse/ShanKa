@@ -27,6 +27,7 @@ const selectedPersonaId = ref(DEFAULT_SAFE_PERSONA_ID);
 const personaSearch = ref("");
 const personaSelectOpen = ref(false);
 const busyAction = ref<PreviewAction | null>(null);
+const editablePreviewText = ref("");
 let unlistenHud: UnlistenFn | null = null;
 let unlistenFocus: UnlistenFn | null = null;
 
@@ -47,7 +48,7 @@ const message = computed(() => {
   }
 });
 
-const previewText = computed(() => currentHud.value.message?.trim() ?? "");
+const previewText = computed(() => currentHud.value.message ?? "");
 const previewId = computed(() => currentHud.value.previewId ?? null);
 const isRefining = computed(() => currentHud.value.status === "refining");
 const isError = computed(() => currentHud.value.status === "error");
@@ -126,7 +127,10 @@ function applyHudUpdate(update: HudUpdate) {
   busyAction.value = null;
 
   if (update.status === "preview") {
+    editablePreviewText.value = update.message ?? "";
     void loadPersonaConfig();
+  } else {
+    editablePreviewText.value = "";
   }
 
   if (update.personaId) {
@@ -165,6 +169,7 @@ async function runPreviewAction(action: PreviewAction, personaId = selectedPerso
   try {
     await invoke(commandForAction(action), {
       previewId: previewId.value,
+      ...(action === "copy" || action === "replace" ? { editedText: editablePreviewText.value } : {}),
       ...(action === "regenerate" ? { personaId } : {}),
     });
 
@@ -237,8 +242,12 @@ function handleKeydown(event: KeyboardEvent) {
     v-if="isPreview"
     class="relative flex h-[212px] w-[404px] flex-col overflow-hidden rounded-lg border border-shanka-border bg-shanka-panel text-shanka-primary shadow-2xl"
   >
-    <div class="min-h-0 flex-1 overflow-y-auto px-3 py-3 text-[13px] leading-5 text-shanka-secondary">
-      <p class="whitespace-pre-wrap break-words">{{ previewText }}</p>
+    <div class="min-h-0 flex-1 px-3 py-3">
+      <textarea
+        v-model="editablePreviewText"
+        class="h-full w-full resize-none bg-transparent text-[13px] leading-5 text-shanka-secondary outline-none placeholder:text-shanka-muted disabled:opacity-70"
+        :disabled="busyAction !== null"
+      />
     </div>
 
     <div class="flex h-11 items-center justify-between gap-2 border-t border-shanka-border px-2">

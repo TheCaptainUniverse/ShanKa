@@ -87,31 +87,39 @@ pub fn run(app: &tauri::AppHandle, mode: SelectionMode) -> Result<PipelineOutcom
     })
 }
 
-pub fn copy_safe_preview(app: &tauri::AppHandle, preview_id: u64) -> Result<(), PipelineError> {
+pub fn copy_safe_preview(
+    app: &tauri::AppHandle,
+    preview_id: u64,
+    edited_text: Option<String>,
+) -> Result<(), PipelineError> {
     let preview = current_safe_preview(preview_id).map_err(PipelineError::Replacement)?;
-    clipboard::copy_text_to_clipboard(&preview.replacement_text)
-        .map_err(PipelineError::Replacement)?;
+    let replacement_text = edited_text.unwrap_or(preview.replacement_text);
+    clipboard::copy_text_to_clipboard(&replacement_text).map_err(PipelineError::Replacement)?;
     hud::saved_to_clipboard(app);
     println!(
         "[pipeline] Safe Mode preview {} copied {} characters",
         preview.id,
-        preview.replacement_text.chars().count()
+        replacement_text.chars().count()
     );
     Ok(())
 }
 
-pub fn replace_safe_preview(app: &tauri::AppHandle, preview_id: u64) -> Result<(), PipelineError> {
+pub fn replace_safe_preview(
+    app: &tauri::AppHandle,
+    preview_id: u64,
+    edited_text: Option<String>,
+) -> Result<(), PipelineError> {
     let preview = current_safe_preview(preview_id).map_err(PipelineError::Replacement)?;
+    let replacement_text = edited_text.unwrap_or(preview.replacement_text);
     crate::window::hide_hud(app);
     crate::platform::restore_preview_target_window();
-    clipboard::replace_selected_text(&preview.replacement_text)
-        .map_err(PipelineError::Replacement)?;
+    clipboard::replace_selected_text(&replacement_text).map_err(PipelineError::Replacement)?;
     clear_safe_preview(preview_id).map_err(PipelineError::Replacement)?;
     hud::replaced(app);
     println!(
         "[pipeline] Safe Mode preview {} replaced selection with {} characters",
         preview.id,
-        preview.replacement_text.chars().count()
+        replacement_text.chars().count()
     );
     Ok(())
 }
