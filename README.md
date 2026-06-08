@@ -80,6 +80,13 @@ Use `-OpenReport` when you want the generated report opened automatically:
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts\release-manual-text-test.ps1 -OpenReport
 ```
 
+Use `-CaptureLog` to save Shanka process stdout/stderr next to the generated
+manual report. This is useful when recording Blocker or High issues:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts\release-manual-text-test.ps1 -CaptureLog
+```
+
 ## Development
 
 ```bash

@@ -2,10 +2,12 @@ param(
   [string] $ConfigDir = "",
   [string] $ReleaseExe = "",
   [string] $ReportPath = "",
+  [string] $LogPath = "",
   [switch] $ReuseConfig,
   [switch] $Wait,
   [switch] $SmokeOnly,
-  [switch] $OpenReport
+  [switch] $OpenReport,
+  [switch] $CaptureLog
 )
 
 $ErrorActionPreference = "Stop"
@@ -172,11 +174,40 @@ function Get-DefaultReportPath {
   return Join-Path $manualReportDir "Shanka_$($version)_$($commit)_windows-text_$timestamp.md"
 }
 
+function Get-DefaultLogPath {
+  if ($SmokeOnly) {
+    return Join-Path $tempRoot "manual-text-test-smoke-process.log"
+  }
+
+  $version = Get-PackageVersion
+  if ([string]::IsNullOrWhiteSpace($version)) {
+    $version = "unknown"
+  }
+
+  $commit = Get-GitValue -Arguments @("rev-parse", "--short", "HEAD")
+  if ([string]::IsNullOrWhiteSpace($commit)) {
+    $commit = "nogit"
+  }
+
+  $timestamp = Get-Date -Format "yyyyMMdd-HHmmss"
+  return Join-Path $manualReportDir "Shanka_$($version)_$($commit)_windows-text_$timestamp.log"
+}
+
+function Get-ErrorLogPath {
+  param([Parameter(Mandatory = $true)][string] $Path)
+
+  $directory = Split-Path -Parent $Path
+  $baseName = [System.IO.Path]::GetFileNameWithoutExtension($Path)
+  return Join-Path $directory "$baseName.stderr.log"
+}
+
 function Write-ManualReport {
   param(
     [Parameter(Mandatory = $true)][string] $Path,
     [Parameter(Mandatory = $true)][string] $ConfigDirectory,
-    [Parameter(Mandatory = $true)][string] $ExecutablePath
+    [Parameter(Mandatory = $true)][string] $ExecutablePath,
+    [Parameter(Mandatory = $true)][string] $ProcessLogPath,
+    [Parameter(Mandatory = $true)][string] $ErrorLogPath
   )
 
   New-Item -ItemType Directory -Force -Path (Split-Path -Parent $Path) | Out-Null
@@ -197,6 +228,8 @@ function Write-ManualReport {
   $lines.Add("| App Version | $version |")
   $lines.Add("| Release Exe | ``$ExecutablePath`` |")
   $lines.Add("| Config Dir | ``$ConfigDirectory`` |")
+  $lines.Add("| Process Log | ``$ProcessLogPath`` |")
+  $lines.Add("| Error Log | ``$ErrorLogPath`` |")
   $lines.Add("| Notepad Fixture | ``$notepadTextPath`` |")
   $lines.Add("| Browser Fixture | ``$browserTextPath`` |")
   $lines.Add("| Safe Mode Hotkey | ``Ctrl+Alt+Shift+S`` |")
@@ -208,6 +241,12 @@ function Write-ManualReport {
   $lines.Add("")
   $lines.Add('```powershell')
   $lines.Add("bun run release:manual-text-test")
+  $lines.Add('```')
+  $lines.Add("")
+  $lines.Add("To capture Shanka process logs to files while testing, use:")
+  $lines.Add("")
+  $lines.Add('```powershell')
+  $lines.Add("powershell -NoProfile -ExecutionPolicy Bypass -File scripts\release-manual-text-test.ps1 -CaptureLog")
   $lines.Add('```')
   $lines.Add("")
   $lines.Add("Use the fixtures opened by the launcher. Record exact failures, target app, selected text shape, and whether the clipboard was restored.")
@@ -258,7 +297,7 @@ function Write-ManualReport {
   $lines.Add("")
   $lines.Add("## Terminal Log Excerpt")
   $lines.Add("")
-  $lines.Add("Paste relevant terminal lines for Blocker/High issues. Keep privacy logging rules in mind and avoid full API keys.")
+  $lines.Add("Paste relevant terminal lines or process log lines for Blocker/High issues. Keep privacy logging rules in mind and avoid full API keys.")
   $lines.Add("")
   $lines.Add('```text')
   $lines.Add("")
@@ -267,7 +306,7 @@ function Write-ManualReport {
   $lines.Add("## Closeout")
   $lines.Add("")
   $lines.Add("- Copy confirmed pass/fail details into ``docs/RELEASE_TEST_MATRIX.md``.")
-  $lines.Add("- Include a terminal log excerpt when reporting Blocker/High issues.")
+  $lines.Add("- Include terminal or process log excerpts when reporting Blocker/High issues.")
   $lines.Add("- Blocker/High issues must be fixed and committed before RC.")
   $lines.Add("- Close Shanka from the tray after the session.")
 
@@ -293,6 +332,16 @@ if ([string]::IsNullOrWhiteSpace($ReportPath)) {
 }
 $ReportPath = Get-FullPath -Path $ReportPath
 
+$shouldCaptureLog = $CaptureLog -or -not [string]::IsNullOrWhiteSpace($LogPath)
+if ($shouldCaptureLog -and [string]::IsNullOrWhiteSpace($LogPath)) {
+  $LogPath = Get-DefaultLogPath
+}
+if (-not [string]::IsNullOrWhiteSpace($LogPath)) {
+  $LogPath = Get-FullPath -Path $LogPath
+}
+$errorLogPath = if ($shouldCaptureLog) { Get-ErrorLogPath -Path $LogPath } else { "not captured" }
+$reportProcessLogPath = if ($shouldCaptureLog) { $LogPath } else { "not captured" }
+
 $existingProcesses = Get-Process shanka -ErrorAction SilentlyContinue
 if ($existingProcesses) {
   $processList = ($existingProcesses | ForEach-Object { "$($_.Id):$($_.Path)" }) -join "; "
@@ -308,14 +357,39 @@ Write-ManualFixtures
 if ((-not (Test-Path -LiteralPath (Join-Path $ConfigDir "config.json"))) -or -not $ReuseConfig) {
   Write-IsolatedConfig -Path $ConfigDir
 }
-Write-ManualReport -Path $ReportPath -ConfigDirectory $ConfigDir -ExecutablePath $ReleaseExe
+Write-ManualReport -Path $ReportPath -ConfigDirectory $ConfigDir -ExecutablePath $ReleaseExe -ProcessLogPath $reportProcessLogPath -ErrorLogPath $errorLogPath
 
-$startInfo = [System.Diagnostics.ProcessStartInfo]::new()
-$startInfo.FileName = $ReleaseExe
-$startInfo.WorkingDirectory = Split-Path -Parent $ReleaseExe
-$startInfo.UseShellExecute = $false
-$startInfo.EnvironmentVariables["SHANKA_CONFIG_DIR"] = $ConfigDir
-$process = [System.Diagnostics.Process]::Start($startInfo)
+if ($shouldCaptureLog) {
+  New-Item -ItemType Directory -Force -Path (Split-Path -Parent $LogPath), (Split-Path -Parent $errorLogPath) | Out-Null
+  Remove-Item -LiteralPath $LogPath, $errorLogPath -Force -ErrorAction SilentlyContinue
+
+  $previousConfigDir = $env:SHANKA_CONFIG_DIR
+  $env:SHANKA_CONFIG_DIR = $ConfigDir
+  try {
+    $process = Start-Process `
+      -FilePath $ReleaseExe `
+      -WorkingDirectory (Split-Path -Parent $ReleaseExe) `
+      -RedirectStandardOutput $LogPath `
+      -RedirectStandardError $errorLogPath `
+      -PassThru
+  }
+  finally {
+    if ($null -eq $previousConfigDir) {
+      Remove-Item Env:SHANKA_CONFIG_DIR -ErrorAction SilentlyContinue
+    }
+    else {
+      $env:SHANKA_CONFIG_DIR = $previousConfigDir
+    }
+  }
+}
+else {
+  $startInfo = [System.Diagnostics.ProcessStartInfo]::new()
+  $startInfo.FileName = $ReleaseExe
+  $startInfo.WorkingDirectory = Split-Path -Parent $ReleaseExe
+  $startInfo.UseShellExecute = $false
+  $startInfo.EnvironmentVariables["SHANKA_CONFIG_DIR"] = $ConfigDir
+  $process = [System.Diagnostics.Process]::Start($startInfo)
+}
 Start-Sleep -Seconds 5
 $process.Refresh()
 if ($process.HasExited) {
@@ -333,11 +407,18 @@ Write-Host "[release-manual-text-test] Magic Mode hotkey: Ctrl+Alt+Shift+M"
 Write-Host "[release-manual-text-test] Notepad fixture: $notepadTextPath"
 Write-Host "[release-manual-text-test] Browser fixture: $browserTextPath"
 Write-Host "[release-manual-text-test] Manual report: $ReportPath"
+if ($shouldCaptureLog) {
+  Write-Host "[release-manual-text-test] Process log: $LogPath"
+  Write-Host "[release-manual-text-test] Error log: $errorLogPath"
+}
 
 if ($SmokeOnly) {
   Stop-Process -Id $process.Id -Force
   [void] $process.WaitForExit(5000)
   Start-Sleep -Seconds 1
+  if ($shouldCaptureLog -and -not (Test-Path -LiteralPath $LogPath -PathType Leaf)) {
+    throw "Process log was not created at $LogPath."
+  }
   if (Test-Path -LiteralPath $tempRoot) {
     Assert-PathWithin -Path $tempRoot -Root ([System.IO.Path]::GetTempPath()) -Label "manual text test temp root"
     Remove-Item -LiteralPath $tempRoot -Recurse -Force
@@ -358,6 +439,10 @@ Write-Host "4. On the read-only paragraph, test Safe copy without changing the p
 Write-Host "5. Record results in the generated report, then copy the final status to docs/RELEASE_TEST_MATRIX.md."
 Write-Host ""
 Write-Host "Generated report: $ReportPath"
+if ($shouldCaptureLog) {
+  Write-Host "Process log: $LogPath"
+  Write-Host "Error log: $errorLogPath"
+}
 Write-Host "Close Shanka from tray when done. Isolated config remains at: $ConfigDir"
 
 if ($OpenReport) {
