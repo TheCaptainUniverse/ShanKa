@@ -73,8 +73,8 @@ pub fn preview_error(
     );
 }
 
-pub fn replaced(app: &tauri::AppHandle) {
-    emit(app, "replaced", None, None, None, None);
+pub fn undo_available(app: &tauri::AppHandle) {
+    emit(app, "undo_available", None, None, None, None);
 }
 
 pub fn saved_to_clipboard(app: &tauri::AppHandle) {

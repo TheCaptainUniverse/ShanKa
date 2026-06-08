@@ -3,7 +3,7 @@ import { computed, onMounted, onUnmounted, ref } from "vue";
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import { Check, ChevronDown, Copy, LoaderCircle, RefreshCw, Replace, Search, X } from "lucide-vue-next";
+import { Check, ChevronDown, Copy, LoaderCircle, RefreshCw, Replace, Search, Undo2, X } from "lucide-vue-next";
 import { useI18n } from "@/i18n/useI18n";
 import { useHud } from "@/composables/useHud";
 import {
@@ -28,6 +28,7 @@ const personaSearch = ref("");
 const personaSelectOpen = ref(false);
 const busyAction = ref<PreviewAction | null>(null);
 const editablePreviewText = ref("");
+const undoCopying = ref(false);
 let unlistenHud: UnlistenFn | null = null;
 let unlistenFocus: UnlistenFn | null = null;
 
@@ -36,6 +37,7 @@ const message = computed(() => {
     case "refining":
       return t("hud.refining");
     case "replaced":
+    case "undo_available":
       return t("hud.replaced");
     case "error":
       return errorMessage(currentHud.value.errorCode);
@@ -53,6 +55,7 @@ const previewId = computed(() => currentHud.value.previewId ?? null);
 const isRefining = computed(() => currentHud.value.status === "refining");
 const isError = computed(() => currentHud.value.status === "error");
 const isPreview = computed(() => currentHud.value.status === "preview" && previewText.value !== "");
+const isUndoAvailable = computed(() => currentHud.value.status === "undo_available");
 const previewErrorMessage = computed(() =>
   isPreview.value && currentHud.value.errorCode ? errorMessage(currentHud.value.errorCode) : "",
 );
@@ -129,6 +132,7 @@ function applyHudUpdate(update: HudUpdate) {
   const previousPreviewId = previewId.value;
   setHud(update);
   busyAction.value = null;
+  undoCopying.value = false;
 
   if (update.status === "preview") {
     if (!update.errorCode || update.previewId !== previousPreviewId) {
@@ -230,6 +234,20 @@ async function dismissPreview() {
     await invoke("dismiss_safe_preview", { previewId: dismissedPreviewId });
   } catch (error) {
     console.warn("[hud] failed to dismiss Safe Mode preview", error);
+  }
+}
+
+async function copyUndoOriginal() {
+  if (undoCopying.value) {
+    return;
+  }
+
+  undoCopying.value = true;
+  try {
+    await invoke("copy_last_replacement_original");
+  } catch (error) {
+    console.warn("[hud] failed to copy previous original text", error);
+    undoCopying.value = false;
   }
 }
 
@@ -351,11 +369,23 @@ function handleKeydown(event: KeyboardEvent) {
 
   <div
     v-else
-    class="inline-flex h-9 max-w-[164px] items-center gap-2 rounded-md border border-shanka-border bg-shanka-panel px-3 text-xs font-medium text-shanka-secondary shadow-xl transition-colors"
+    class="inline-flex h-9 max-w-[204px] items-center gap-2 rounded-md border border-shanka-border bg-shanka-panel px-3 text-xs font-medium text-shanka-secondary shadow-xl transition-colors"
   >
     <LoaderCircle v-if="isRefining" class="size-3.5 shrink-0 animate-spin text-shanka-primary" />
     <X v-else-if="isError" class="size-3.5 shrink-0 text-shanka-danger" />
     <Check v-else class="size-3.5 shrink-0 text-shanka-success" />
     <span class="truncate">{{ message }}</span>
+    <button
+      v-if="isUndoAvailable"
+      class="-mr-1 inline-flex size-7 shrink-0 items-center justify-center rounded-md text-shanka-muted transition hover:bg-shanka-input hover:text-shanka-primary disabled:opacity-50"
+      :title="t('hud.action.undo')"
+      :aria-label="t('hud.action.undo')"
+      :disabled="undoCopying"
+      type="button"
+      @click="copyUndoOriginal"
+    >
+      <LoaderCircle v-if="undoCopying" class="size-3.5 animate-spin" />
+      <Undo2 v-else class="size-3.5" />
+    </button>
   </div>
 </template>

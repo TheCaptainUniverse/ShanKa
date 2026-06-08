@@ -14,6 +14,7 @@ use std::{
 
 static SAFE_PREVIEW_ID: AtomicU64 = AtomicU64::new(0);
 static SAFE_PREVIEW: Mutex<Option<SafePreview>> = Mutex::new(None);
+static LAST_REPLACEMENT: Mutex<Option<LastReplacement>> = Mutex::new(None);
 
 #[derive(Clone, Debug)]
 struct SafePreview {
@@ -21,6 +22,11 @@ struct SafePreview {
     original_text: String,
     replacement_text: String,
     persona_id: String,
+}
+
+#[derive(Clone, Debug)]
+struct LastReplacement {
+    original_text: String,
 }
 
 #[derive(Debug)]
@@ -137,6 +143,7 @@ pub fn replace_safe_preview(
     let replaced = replace_or_save_to_clipboard(app, &replacement_text)?;
     clear_safe_preview(preview_id).map_err(PipelineError::Replacement)?;
     if replaced {
+        remember_last_replacement(&preview.original_text);
         println!(
             "[pipeline] Safe Mode preview {} replaced selection with {} characters",
             preview.id,
@@ -285,6 +292,7 @@ fn run_magic_replacement(app: &tauri::AppHandle) -> Result<PipelineOutcome, Pipe
     let selection = capture_and_rewrite(app, SelectionMode::Magic, None)?;
     let replaced = replace_or_save_to_clipboard(app, &selection.replacement_text)?;
     if replaced {
+        remember_last_replacement(&selection.original_text);
         println!(
             "[pipeline] Magic Mode replaced {} characters",
             selection.replacement_text.chars().count()
@@ -314,6 +322,44 @@ fn run_magic_replacement(app: &tauri::AppHandle) -> Result<PipelineOutcome, Pipe
     Ok(selection.into_outcome(Duration::ZERO))
 }
 
+pub fn copy_last_replacement_original(app: &tauri::AppHandle) -> Result<(), PipelineError> {
+    let replacement = LAST_REPLACEMENT
+        .lock()
+        .map_err(|error| {
+            PipelineError::Replacement(SelectionError::Clipboard(format!(
+                "last replacement lock failed: {error}"
+            )))
+        })?
+        .clone()
+        .ok_or_else(|| {
+            PipelineError::Replacement(SelectionError::Clipboard(
+                "last replacement is no longer available".to_string(),
+            ))
+        })?;
+
+    clipboard::copy_text_to_clipboard(&replacement.original_text)
+        .map_err(PipelineError::Replacement)?;
+    hud::saved_to_clipboard(app);
+    println!(
+        "[pipeline] copied previous original text to clipboard for undo: {} characters",
+        replacement.original_text.chars().count()
+    );
+    Ok(())
+}
+
+fn remember_last_replacement(original_text: &str) {
+    match LAST_REPLACEMENT.lock() {
+        Ok(mut replacement) => {
+            *replacement = Some(LastReplacement {
+                original_text: original_text.to_string(),
+            });
+        }
+        Err(error) => {
+            println!("[pipeline] failed to remember last replacement for undo: {error}");
+        }
+    }
+}
+
 fn record_history(app: &tauri::AppHandle, record: history::RewriteHistoryRecord<'_>) {
     if let Err(error) = history::record(app, record) {
         println!("[history] failed to record rewrite history: {error}");
@@ -335,7 +381,7 @@ fn replace_or_save_to_clipboard(
 
     match clipboard::replace_selected_text(replacement_text) {
         Ok(()) => {
-            hud::replaced(app);
+            hud::undo_available(app);
             Ok(true)
         }
         Err(paste_error) => {

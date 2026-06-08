@@ -152,6 +152,15 @@ fn layout_for_status(status: &str) -> HudLayout {
         };
     }
 
+    if status == "undo_available" {
+        return HudLayout {
+            width: 220.0,
+            height: 52.0,
+            vertical_offset: 8.0,
+            interactive: true,
+        };
+    }
+
     HudLayout {
         width: 180.0,
         height: 52.0,
@@ -161,7 +170,10 @@ fn layout_for_status(status: &str) -> HudLayout {
 }
 
 fn should_auto_hide(status: &str) -> bool {
-    matches!(status, "replaced" | "error" | "saved_to_clipboard")
+    matches!(
+        status,
+        "replaced" | "undo_available" | "error" | "saved_to_clipboard"
+    )
 }
 
 fn schedule_hud_hide(app: tauri::AppHandle, generation: u64) {
@@ -172,10 +184,6 @@ fn schedule_hud_hide(app: tauri::AppHandle, generation: u64) {
             return;
         }
 
-        if let Some(window) = app.get_webview_window(HUD_WINDOW_LABEL) {
-            if let Err(error) = window.hide() {
-                println!("[window] failed to hide HUD window: {error}");
-            }
-        }
+        hide_hud(&app);
     });
 }

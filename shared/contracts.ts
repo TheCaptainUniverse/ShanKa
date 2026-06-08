@@ -10,6 +10,7 @@ export const HUD_STATUSES = [
   "preview",
   "ready",
   "replaced",
+  "undo_available",
   "error",
   "saved_to_clipboard",
 ] as const;

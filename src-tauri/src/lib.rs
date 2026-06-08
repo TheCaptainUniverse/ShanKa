@@ -73,6 +73,14 @@ fn copy_history_result(app: tauri::AppHandle, history_id: u64) -> Result<(), Str
 }
 
 #[tauri::command]
+fn copy_last_replacement_original(app: tauri::AppHandle) -> Result<(), String> {
+    pipeline::copy_last_replacement_original(&app).map_err(|error| {
+        hud::error(&app, error.error_code());
+        error.to_string()
+    })
+}
+
+#[tauri::command]
 fn save_hotkey_config(
     app: tauri::AppHandle,
     hotkeys: config::HotkeyConfig,
@@ -172,6 +180,7 @@ pub fn run() {
             open_platform_permission_settings,
             clear_rewrite_history,
             copy_history_result,
+            copy_last_replacement_original,
             save_app_settings,
             test_provider_connection,
             save_hotkey_config,
