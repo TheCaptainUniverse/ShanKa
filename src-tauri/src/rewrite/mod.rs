@@ -296,7 +296,10 @@ async fn call_chat_completion(
     if !status.is_success() {
         let body = response_body_sample(&body);
         return Err(ProviderCallError {
-            message: format!("provider returned HTTP {status}: {body}"),
+            message: format!(
+                "provider returned HTTP {status}{}",
+                provider_text_debug_suffix("body sample", &body)
+            ),
             retry_plain: matches!(output_mode, OutputMode::Json)
                 && response_format_may_be_unsupported(status.as_u16(), &body),
             timeout: false,
@@ -305,8 +308,8 @@ async fn call_chat_completion(
 
     let payload = serde_json::from_slice::<ChatCompletionResponse>(&body).map_err(|error| {
         ProviderCallError::remote(format!(
-            "failed to parse provider response JSON: {error}; body: {}",
-            response_body_sample(&body)
+            "failed to parse provider response JSON: {error}{}",
+            provider_body_debug_suffix(&body)
         ))
     })?;
     let output = payload
@@ -372,8 +375,8 @@ fn parse_structured_rewrite(content: &str) -> Result<String, ProviderCallError> 
         .map(|payload| payload.text.trim().to_string())
         .map_err(|error| ProviderCallError {
             message: format!(
-                "failed to parse rewrite JSON content: {error}; content: {}",
-                content.chars().take(500).collect::<String>()
+                "failed to parse rewrite JSON content: {error}{}",
+                provider_text_debug_suffix("content sample", content)
             ),
             retry_plain: true,
             timeout: false,
@@ -401,12 +404,73 @@ fn max_tokens_for_text(text: &str) -> u32 {
 fn response_body_sample(body: &[u8]) -> String {
     let text = String::from_utf8_lossy(body);
     let sample = text.trim().chars().take(500).collect::<String>();
+    let sample = redact_sensitive_sample(&sample);
 
     if sample.is_empty() {
         "<empty body>".to_string()
     } else {
         sample
     }
+}
+
+fn provider_body_debug_suffix(body: &[u8]) -> String {
+    if !config::debug_logging_enabled() {
+        return String::new();
+    }
+
+    provider_text_debug_suffix("body sample", &response_body_sample(body))
+}
+
+fn provider_text_debug_suffix(label: &str, text: &str) -> String {
+    if !config::debug_logging_enabled() {
+        return String::new();
+    }
+
+    let sample = text.trim().chars().take(500).collect::<String>();
+    let sample = redact_sensitive_sample(&sample);
+    if sample.is_empty() {
+        format!("; {label}: <empty>")
+    } else {
+        format!("; {label}: {sample}")
+    }
+}
+
+fn redact_sensitive_sample(sample: &str) -> String {
+    let mut redacted = String::with_capacity(sample.len());
+    let chars = sample.chars().collect::<Vec<_>>();
+    let mut index = 0;
+
+    while index < chars.len() {
+        if starts_with_at(&chars, index, "sk-") {
+            redacted.push_str("[redacted-api-key]");
+            index += 3;
+            while index < chars.len() && !is_secret_delimiter(chars[index]) {
+                index += 1;
+            }
+            continue;
+        }
+
+        redacted.push(chars[index]);
+        index += 1;
+    }
+
+    redacted
+}
+
+fn starts_with_at(chars: &[char], index: usize, needle: &str) -> bool {
+    needle.chars().enumerate().all(|(offset, character)| {
+        chars
+            .get(index + offset)
+            .is_some_and(|value| *value == character)
+    })
+}
+
+fn is_secret_delimiter(character: char) -> bool {
+    character.is_whitespace()
+        || matches!(
+            character,
+            '"' | '\'' | ',' | ';' | ':' | '}' | ']' | ')' | '<' | '>'
+        )
 }
 
 fn rewrite_messages(

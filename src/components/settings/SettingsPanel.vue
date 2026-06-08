@@ -20,6 +20,7 @@ type AppSettingsConfig = {
   base_url: string;
   model: string;
   timeout_ms: number;
+  debug_logging: boolean;
 };
 type AppSettingsStatus = "idle" | "saved" | "error";
 type PersonaStatus = "idle" | "saved" | "error";
@@ -45,6 +46,7 @@ const appSettings = ref<AppSettingsConfig>({
   base_url: "",
   model: "",
   timeout_ms: 8000,
+  debug_logging: false,
 });
 const settingsLoading = ref(false);
 const settingsSaving = ref(false);
@@ -182,6 +184,7 @@ async function saveAppSettings() {
         base_url: appSettings.value.base_url.trim(),
         model: appSettings.value.model.trim(),
         timeout_ms: Math.round(appSettings.value.timeout_ms),
+        debug_logging: appSettings.value.debug_logging,
       },
     });
     appSettings.value = savedSettings;
@@ -792,6 +795,20 @@ function personaDescription(persona: PersonaDefinition) {
               step="1000"
               type="number"
               @input="markSettingsDirty"
+            />
+          </label>
+
+          <label class="flex items-center justify-between gap-4 rounded-md border border-shanka-border px-3 py-2">
+            <span>
+              <span class="block text-sm text-shanka-secondary">{{ t("settings.field.debugLogging") }}</span>
+              <span class="mt-1 block text-xs text-shanka-muted">{{ t("settings.general.debugLoggingHint") }}</span>
+            </span>
+            <input
+              v-model="appSettings.debug_logging"
+              class="size-4 accent-shanka-primary"
+              :disabled="settingsLoading"
+              type="checkbox"
+              @change="markSettingsDirty"
             />
           </label>
 

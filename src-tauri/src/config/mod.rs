@@ -1,12 +1,17 @@
 use global_hotkey::hotkey::HotKey;
 use serde::{Deserialize, Serialize};
-use std::{fs, path::PathBuf};
+use std::{
+    fs,
+    path::PathBuf,
+    sync::atomic::{AtomicBool, Ordering},
+};
 use tauri::Manager;
 
 use crate::persona;
 
 const CONFIG_FILE_NAME: &str = "config.json";
 const CONFIG_SCHEMA_VERSION: u16 = 1;
+static DEBUG_LOGGING_ENABLED: AtomicBool = AtomicBool::new(false);
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
@@ -57,6 +62,7 @@ pub struct AppSettingsConfig {
     pub base_url: String,
     pub model: String,
     pub timeout_ms: u64,
+    pub debug_logging: bool,
 }
 
 impl Default for AppSettingsConfig {
@@ -66,6 +72,7 @@ impl Default for AppSettingsConfig {
             base_url: "https://api.openai.com/v1".to_string(),
             model: String::new(),
             timeout_ms: 8_000,
+            debug_logging: false,
         }
     }
 }
@@ -109,6 +116,7 @@ impl std::error::Error for ConfigError {}
 
 pub fn setup(app: &tauri::AppHandle) -> tauri::Result<()> {
     let config = load_or_create(app).map_err(to_tauri_error)?;
+    apply_runtime_flags(&config);
     let path = config_path(app).map_err(to_tauri_error)?;
     println!(
         "[config] app config ready at {}; Safe Mode={}, Magic Mode={}, Base URL={}, Model={}, Default Persona={}",
@@ -173,6 +181,7 @@ pub fn save_settings(
     let mut config = load_or_create(app)?;
     config.settings = settings;
     save_app_config_at(&config_path(app)?, &config)?;
+    apply_runtime_flags(&config);
     Ok(config.settings)
 }
 
@@ -217,6 +226,7 @@ impl AppSettingsConfig {
             base_url,
             model: self.model.trim().to_string(),
             timeout_ms: self.timeout_ms.clamp(1_000, 120_000),
+            debug_logging: self.debug_logging,
         })
     }
 
@@ -239,6 +249,14 @@ fn normalized_personas(
     }
 
     Ok(normalized)
+}
+
+pub fn debug_logging_enabled() -> bool {
+    DEBUG_LOGGING_ENABLED.load(Ordering::Relaxed)
+}
+
+fn apply_runtime_flags(config: &AppConfig) {
+    DEBUG_LOGGING_ENABLED.store(config.settings.debug_logging, Ordering::Relaxed);
 }
 
 pub fn default_hotkeys() -> HotkeyConfig {

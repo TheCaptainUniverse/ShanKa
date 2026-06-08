@@ -177,7 +177,14 @@ impl ClipboardCaptureMachine {
         }
 
         self.log_step(ClipboardCaptureStep::Complete);
-        println!("[clipboard] captured selected text:\n{selected_text}");
+        if crate::config::debug_logging_enabled() {
+            println!("[clipboard] captured selected text:\n{selected_text}");
+        } else {
+            println!(
+                "[clipboard] captured selected text: {} characters",
+                selected_text.chars().count()
+            );
+        }
         Ok(selected_text)
     }
 
