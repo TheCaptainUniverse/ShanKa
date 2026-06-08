@@ -38,6 +38,7 @@ Build Windows packages with:
 ```bash
 bun run tauri build
 bun run release:smoke
+bun run release:manifest
 ```
 
 Current Windows outputs:
@@ -74,6 +75,7 @@ Before packaging a release, run:
 bun run check
 bun run tauri build
 bun run release:smoke
+bun run release:manifest
 ```
 
 ## Troubleshooting

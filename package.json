@@ -11,6 +11,7 @@
     "check": "bun run check:rust && bun test && bun run build",
     "check:rust": "cargo fmt --manifest-path src-tauri/Cargo.toml --check && cargo check --manifest-path src-tauri/Cargo.toml && cargo test --manifest-path src-tauri/Cargo.toml",
     "release:smoke": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/release-smoke.ps1",
+    "release:manifest": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/release-manifest.ps1",
     "build": "bun run typecheck && vite build",
     "preview": "vite preview",
     "typecheck": "vue-tsc --noEmit && bun run typecheck:server",
