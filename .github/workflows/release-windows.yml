@@ -42,6 +42,9 @@ jobs:
         if: ${{ github.event_name == 'workflow_dispatch' && inputs.run_smoke }}
         run: bun run release:smoke
 
+      - name: Smoke MSI package metadata
+        run: bun run release:msi-smoke
+
       - name: Generate release manifest
         run: bun run release:manifest
 
