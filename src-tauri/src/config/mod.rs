@@ -7,7 +7,7 @@ use std::{
 };
 use tauri::Manager;
 
-use crate::persona;
+use crate::{keychain, persona};
 
 const CONFIG_FILE_NAME: &str = "config.json";
 const CONFIG_SCHEMA_VERSION: u16 = 1;
@@ -59,7 +59,9 @@ pub struct ResolvedHotkeyConfig {
 #[serde(default)]
 pub struct AppSettingsConfig {
     pub provider: String,
+    #[serde(skip_serializing)]
     pub api_key: String,
+    pub api_key_ref: String,
     pub base_url: String,
     pub model: String,
     pub timeout_ms: u64,
@@ -71,6 +73,7 @@ impl Default for AppSettingsConfig {
         Self {
             provider: "openai".to_string(),
             api_key: String::new(),
+            api_key_ref: String::new(),
             base_url: "https://api.openai.com/v1".to_string(),
             model: String::new(),
             timeout_ms: 8_000,
@@ -148,9 +151,13 @@ pub fn load_or_create(app: &tauri::AppHandle) -> Result<AppConfig, ConfigError> 
 
     match load_app_config_at(&path) {
         Ok(mut config) => {
+            let mut should_save = migrate_legacy_api_key(&mut config.settings)?;
             let normalized_personas = persona::normalize_config(&config.personas);
             if normalized_personas != config.personas {
                 config.personas = normalized_personas;
+                should_save = true;
+            }
+            if should_save {
                 save_app_config_at(&path, &config)?;
             }
             Ok(config)
@@ -180,12 +187,22 @@ pub fn save_settings(
     app: &tauri::AppHandle,
     settings: AppSettingsConfig,
 ) -> Result<AppSettingsConfig, ConfigError> {
-    let settings = settings.normalized()?;
     let mut config = load_or_create(app)?;
+    let mut settings = settings.normalized()?;
+    settings.api_key_ref = if settings.api_key.trim().is_empty() {
+        if settings.api_key_ref.trim().is_empty() {
+            config.settings.api_key_ref.clone()
+        } else {
+            settings.api_key_ref.clone()
+        }
+    } else {
+        keychain::store_api_key(&settings.api_key).map_err(ConfigError::InvalidSettings)?
+    };
+    settings.api_key.clear();
     config.settings = settings;
     save_app_config_at(&config_path(app)?, &config)?;
     apply_runtime_flags(&config);
-    Ok(config.settings)
+    Ok(public_settings(config.settings))
 }
 
 pub fn save_personas(
@@ -197,6 +214,10 @@ pub fn save_personas(
     config.personas = personas;
     save_app_config_at(&config_path(app)?, &config)?;
     Ok(config.personas)
+}
+
+pub fn load_settings(app: &tauri::AppHandle) -> Result<AppSettingsConfig, ConfigError> {
+    load_or_create(app).map(|config| public_settings(config.settings))
 }
 
 impl HotkeyConfig {
@@ -231,11 +252,24 @@ impl AppSettingsConfig {
                 self.provider.trim().to_string()
             },
             api_key: self.api_key.trim().to_string(),
+            api_key_ref: self.api_key_ref.trim().to_string(),
             base_url,
             model: self.model.trim().to_string(),
             timeout_ms: self.timeout_ms.clamp(1_000, 120_000),
             debug_logging: self.debug_logging,
         })
+    }
+
+    pub fn with_resolved_api_key(&self) -> Result<Self, ConfigError> {
+        let mut settings = self.normalized()?;
+
+        if settings.api_key.trim().is_empty() {
+            settings.api_key = keychain::load_api_key(&settings.api_key_ref)
+                .map_err(ConfigError::InvalidSettings)?
+                .unwrap_or_default();
+        }
+
+        Ok(settings)
     }
 
     pub fn can_use_remote_provider(&self) -> bool {
@@ -257,6 +291,22 @@ fn normalized_personas(
     }
 
     Ok(normalized)
+}
+
+fn migrate_legacy_api_key(settings: &mut AppSettingsConfig) -> Result<bool, ConfigError> {
+    if settings.api_key.trim().is_empty() {
+        return Ok(false);
+    }
+
+    settings.api_key_ref =
+        keychain::store_api_key(&settings.api_key).map_err(ConfigError::InvalidSettings)?;
+    settings.api_key.clear();
+    Ok(true)
+}
+
+fn public_settings(mut settings: AppSettingsConfig) -> AppSettingsConfig {
+    settings.api_key.clear();
+    settings
 }
 
 pub fn debug_logging_enabled() -> bool {
@@ -338,4 +388,24 @@ fn to_tauri_error(error: ConfigError) -> tauri::Error {
         std::io::ErrorKind::Other,
         error.to_string(),
     ))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::AppSettingsConfig;
+
+    #[test]
+    fn app_settings_do_not_serialize_plaintext_api_key() {
+        let settings = AppSettingsConfig {
+            api_key: "sk-test-secret".to_string(),
+            api_key_ref: "keychain://shanka/openai-compatible-api-key".to_string(),
+            ..AppSettingsConfig::default()
+        };
+
+        let json = serde_json::to_string(&settings).expect("settings should serialize");
+
+        assert!(!json.contains("sk-test-secret"));
+        assert!(!json.contains("\"api_key\""));
+        assert!(json.contains("api_key_ref"));
+    }
 }

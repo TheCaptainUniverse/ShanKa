@@ -183,7 +183,7 @@ pub fn rewrite_selected_text_with_persona(
         config::load_or_create(app).map_err(|error| RewriteError::Config(error.to_string()))?;
     let settings = config
         .settings
-        .normalized()
+        .with_resolved_api_key()
         .map_err(|error| RewriteError::Config(error.to_string()))?;
     let persona = persona_id
         .and_then(|persona_id| persona::resolve_persona(&config.personas, Some(persona_id)));
@@ -211,7 +211,7 @@ pub fn default_safe_persona_id() -> &'static str {
 
 pub fn test_provider_connection(settings: config::AppSettingsConfig) -> Result<(), RewriteError> {
     let settings = settings
-        .normalized()
+        .with_resolved_api_key()
         .map_err(|error| RewriteError::Config(error.to_string()))?;
 
     if !settings.can_use_remote_provider() {

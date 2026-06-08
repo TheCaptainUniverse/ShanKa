@@ -18,6 +18,7 @@ type HotkeyStatus = "idle" | "saved" | "error";
 type AppSettingsConfig = {
   provider: string;
   api_key: string;
+  api_key_ref: string;
   base_url: string;
   model: string;
   timeout_ms: number;
@@ -73,6 +74,7 @@ const selectedTab = ref<SettingsTab>("general");
 const appSettings = ref<AppSettingsConfig>({
   provider: "openai",
   api_key: "",
+  api_key_ref: "",
   base_url: "",
   model: "",
   timeout_ms: 8000,
@@ -138,7 +140,7 @@ const canTestProvider = computed(
   () =>
     !settingsLoading.value &&
     !providerTesting.value &&
-    appSettings.value.api_key.trim() !== "" &&
+    (appSettings.value.api_key.trim() !== "" || appSettings.value.api_key_ref.trim() !== "") &&
     appSettings.value.base_url.trim() !== "" &&
     appSettings.value.model.trim() !== "",
 );
@@ -183,7 +185,13 @@ async function loadAppSettings() {
   settingsErrorKey.value = null;
 
   try {
-    appSettings.value = await invoke<AppSettingsConfig>("get_app_settings");
+    const loadedSettings = await invoke<Partial<AppSettingsConfig>>("get_app_settings");
+    appSettings.value = {
+      ...appSettings.value,
+      ...loadedSettings,
+      api_key: "",
+      api_key_ref: loadedSettings.api_key_ref ?? "",
+    };
     settingsDirty.value = false;
     settingsStatus.value = "idle";
   } catch (error) {
@@ -220,10 +228,15 @@ async function saveAppSettings() {
   settingsErrorKey.value = null;
 
   try {
-    const savedSettings = await invoke<AppSettingsConfig>("save_app_settings", {
+    const savedSettings = await invoke<Partial<AppSettingsConfig>>("save_app_settings", {
       settings: appSettingsPayload(),
     });
-    appSettings.value = savedSettings;
+    appSettings.value = {
+      ...appSettings.value,
+      ...savedSettings,
+      api_key: "",
+      api_key_ref: savedSettings.api_key_ref ?? appSettings.value.api_key_ref,
+    };
     settingsDirty.value = false;
     settingsStatus.value = "saved";
   } catch (error) {
@@ -336,6 +349,7 @@ function appSettingsPayload(): AppSettingsConfig {
   return {
     provider: appSettings.value.provider.trim() || "custom",
     api_key: appSettings.value.api_key.trim(),
+    api_key_ref: appSettings.value.api_key_ref.trim(),
     base_url: appSettings.value.base_url.trim(),
     model: appSettings.value.model.trim(),
     timeout_ms: Math.round(appSettings.value.timeout_ms),
@@ -752,6 +766,9 @@ function formatSettingsError(error: unknown): TranslationKey {
   if (message.includes("base_url cannot be empty")) {
     return "settings.general.invalidBaseUrl";
   }
+  if (message.includes("system keychain") || message.includes("keychain")) {
+    return "settings.general.keychainError";
+  }
 
   return "settings.general.unknownError";
 }
@@ -773,6 +790,9 @@ function formatProviderTestError(error: unknown): TranslationKey {
   }
   if (message.includes("request timed out")) {
     return "settings.providerTest.timeout";
+  }
+  if (message.includes("system keychain") || message.includes("keychain")) {
+    return "settings.providerTest.keychain";
   }
 
   return "settings.providerTest.remote";
@@ -883,6 +903,7 @@ function personaDescription(persona: PersonaDefinition) {
               type="password"
               @input="markSettingsDirty"
             />
+            <span class="mt-1 block text-xs text-shanka-muted">{{ t("settings.general.apiKeyKeychainHint") }}</span>
           </label>
 
           <label class="block">

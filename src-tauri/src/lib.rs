@@ -4,6 +4,7 @@ mod config;
 mod hotkey;
 mod hud;
 mod input;
+mod keychain;
 mod persona;
 mod pipeline;
 mod platform;
@@ -31,9 +32,7 @@ fn get_hotkey_config(app: tauri::AppHandle) -> Result<config::HotkeyConfig, Stri
 
 #[tauri::command]
 fn get_app_settings(app: tauri::AppHandle) -> Result<config::AppSettingsConfig, String> {
-    config::load_or_create(&app)
-        .map(|config| config.settings)
-        .map_err(|error| error.to_string())
+    config::load_settings(&app).map_err(|error| error.to_string())
 }
 
 #[tauri::command]
