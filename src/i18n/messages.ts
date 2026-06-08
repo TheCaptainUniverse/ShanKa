@@ -8,6 +8,7 @@ export const messages = {
   "zh-CN": {
     "app.name": "闪改",
     "settings.title": "设置",
+    "settings.appearance": "外观",
     "settings.language": "界面语言",
     "settings.nav.general": "通用",
     "settings.nav.personas": "人格仓库",
@@ -18,6 +19,8 @@ export const messages = {
     "settings.status.active": "已启用",
     "settings.locale.zh": "中文",
     "settings.locale.en": "English",
+    "settings.theme.light": "亮色",
+    "settings.theme.dark": "暗色",
     "persona.workplaceEq.name": "高情商职场",
     "persona.academicConcise.name": "学术精简",
     "persona.cleanCorrection.name": "纯净纠错",
@@ -30,6 +33,7 @@ export const messages = {
   "en-US": {
     "app.name": "Shanka",
     "settings.title": "Settings",
+    "settings.appearance": "Appearance",
     "settings.language": "Language",
     "settings.nav.general": "General",
     "settings.nav.personas": "Personas",
@@ -40,6 +44,8 @@ export const messages = {
     "settings.status.active": "Active",
     "settings.locale.zh": "中文",
     "settings.locale.en": "English",
+    "settings.theme.light": "Light",
+    "settings.theme.dark": "Dark",
     "persona.workplaceEq.name": "High-EQ Workplace",
     "persona.academicConcise.name": "Academic Concise",
     "persona.cleanCorrection.name": "Clean Correction",

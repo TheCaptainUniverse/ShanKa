@@ -17,10 +17,10 @@ const message = computed(() => {
 
 <template>
   <div
-    class="inline-flex h-9 items-center gap-2 rounded-md border border-shanka-border bg-shanka-panel px-3 text-xs text-zinc-200 shadow-xl"
+    class="inline-flex h-9 items-center gap-2 rounded-md border border-shanka-border bg-shanka-panel px-3 text-xs text-shanka-secondary shadow-xl transition-colors"
   >
     <span
-      class="size-3 animate-spin rounded-full border border-white/30 border-t-white"
+      class="size-3 animate-spin rounded-full border border-shanka-muted/30 border-t-shanka-primary"
       aria-hidden="true"
     />
     <span>{{ message }}</span>

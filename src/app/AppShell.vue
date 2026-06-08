@@ -4,7 +4,7 @@ import SettingsPanel from "@/components/settings/SettingsPanel.vue";
 </script>
 
 <template>
-  <main class="min-h-screen bg-shanka-canvas text-zinc-100">
+  <main class="min-h-screen bg-shanka-canvas text-shanka-primary transition-colors">
     <SettingsPanel />
     <HudPill class="fixed right-6 top-6" />
   </main>

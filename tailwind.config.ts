@@ -6,11 +6,16 @@ export default {
     extend: {
       colors: {
         shanka: {
-          canvas: "#171717",
-          panel: "#212121",
-          input: "#2F2F2F",
-          success: "#10A37F",
-          border: "rgba(255,255,255,0.10)",
+          canvas: "rgb(var(--shanka-canvas) / <alpha-value>)",
+          panel: "rgb(var(--shanka-panel) / <alpha-value>)",
+          input: "rgb(var(--shanka-input) / <alpha-value>)",
+          success: "rgb(var(--shanka-success) / <alpha-value>)",
+          primary: "rgb(var(--shanka-primary) / <alpha-value>)",
+          secondary: "rgb(var(--shanka-secondary) / <alpha-value>)",
+          muted: "rgb(var(--shanka-muted) / <alpha-value>)",
+          hover: "rgb(var(--shanka-hover) / <alpha-value>)",
+          focus: "rgb(var(--shanka-focus) / <alpha-value>)",
+          border: "var(--shanka-border)",
         },
       },
       fontFamily: {
