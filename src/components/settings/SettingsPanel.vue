@@ -20,6 +20,11 @@ import {
 } from "lucide-vue-next";
 import { useI18n } from "@/i18n/useI18n";
 import type { Locale, TranslationKey } from "@/i18n/messages";
+import {
+  applyProviderPresetToSettings,
+  PROVIDER_PRESETS as providerPresets,
+  providerTestErrorKey as mapProviderTestErrorKey,
+} from "@/settings/provider";
 import { useTheme } from "@/theme/useTheme";
 import type { Theme } from "@/theme/useTheme";
 import { BUILT_IN_PERSONAS, DEFAULT_SAFE_PERSONA_ID, type PersonaConfig, type PersonaDefinition } from "@shared";
@@ -84,33 +89,6 @@ const navItems = [
   { id: "history", label: "settings.nav.history" },
   { id: "hotkeys", label: "settings.nav.hotkeys" },
 ] as const satisfies readonly { id: SettingsTab; label: TranslationKey }[];
-
-const providerPresets = [
-  {
-    id: "deepseek",
-    label: "DeepSeek",
-    base_url: "https://api.deepseek.com",
-    model: "deepseek-v4-flash",
-  },
-  {
-    id: "openai",
-    label: "OpenAI",
-    base_url: "https://api.openai.com/v1",
-    model: "gpt-4.1-mini",
-  },
-  {
-    id: "openrouter",
-    label: "OpenRouter",
-    base_url: "https://openrouter.ai/api/v1",
-    model: "openai/gpt-4.1-mini",
-  },
-  {
-    id: "custom",
-    label: "Custom",
-    base_url: "",
-    model: "",
-  },
-] as const;
 
 const selectedTab = ref<SettingsTab>("general");
 const appSettings = ref<AppSettingsConfig>({
@@ -480,18 +458,7 @@ function appSettingsPayload(): AppSettingsConfig {
 }
 
 function applyProviderPreset(providerId: string) {
-  const preset = providerPresets.find((item) => item.id === providerId);
-  if (!preset) {
-    appSettings.value.provider = "custom";
-    markSettingsDirty();
-    return;
-  }
-
-  appSettings.value.provider = preset.id;
-  if (preset.id !== "custom") {
-    appSettings.value.base_url = preset.base_url;
-    appSettings.value.model = preset.model;
-  }
+  appSettings.value = applyProviderPresetToSettings(appSettings.value, providerId);
   markSettingsDirty();
 }
 
@@ -939,28 +906,7 @@ function formatSettingsError(error: unknown): TranslationKey {
 }
 
 function formatProviderTestError(error: unknown): TranslationKey {
-  const message = error instanceof Error ? error.message : String(error);
-
-  if (message.includes("api_key, base_url, and model are required")) {
-    return "settings.providerTest.missing";
-  }
-  if (message.includes("PROVIDER_TEST_AUTH")) {
-    return "settings.providerTest.auth";
-  }
-  if (message.includes("PROVIDER_TEST_MODEL")) {
-    return "settings.providerTest.model";
-  }
-  if (message.includes("PROVIDER_TEST_NETWORK")) {
-    return "settings.providerTest.network";
-  }
-  if (message.includes("request timed out")) {
-    return "settings.providerTest.timeout";
-  }
-  if (message.includes("system keychain") || message.includes("keychain")) {
-    return "settings.providerTest.keychain";
-  }
-
-  return "settings.providerTest.remote";
+  return mapProviderTestErrorKey(error);
 }
 
 function formatPersonaError(error: unknown): TranslationKey {
