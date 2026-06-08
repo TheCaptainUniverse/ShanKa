@@ -256,9 +256,18 @@ function Write-ManualReport {
   $lines.Add("| --- | --- | --- | --- | --- | --- | --- |")
   $lines.Add("|  |  | Windows |  |  |  |  |")
   $lines.Add("")
+  $lines.Add("## Terminal Log Excerpt")
+  $lines.Add("")
+  $lines.Add("Paste relevant terminal lines for Blocker/High issues. Keep privacy logging rules in mind and avoid full API keys.")
+  $lines.Add("")
+  $lines.Add('```text')
+  $lines.Add("")
+  $lines.Add('```')
+  $lines.Add("")
   $lines.Add("## Closeout")
   $lines.Add("")
   $lines.Add("- Copy confirmed pass/fail details into ``docs/RELEASE_TEST_MATRIX.md``.")
+  $lines.Add("- Include a terminal log excerpt when reporting Blocker/High issues.")
   $lines.Add("- Blocker/High issues must be fixed and committed before RC.")
   $lines.Add("- Close Shanka from the tray after the session.")
 
@@ -327,6 +336,7 @@ Write-Host "[release-manual-text-test] Manual report: $ReportPath"
 
 if ($SmokeOnly) {
   Stop-Process -Id $process.Id -Force
+  [void] $process.WaitForExit(5000)
   Start-Sleep -Seconds 1
   if (Test-Path -LiteralPath $tempRoot) {
     Assert-PathWithin -Path $tempRoot -Root ([System.IO.Path]::GetTempPath()) -Label "manual text test temp root"
