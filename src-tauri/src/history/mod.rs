@@ -45,20 +45,7 @@ pub fn record(app: &tauri::AppHandle, record: RewriteHistoryRecord<'_>) -> Resul
 
     let mut history = load(app)?;
     let created_at_ms = current_time_millis();
-    history.insert(
-        0,
-        RewriteHistoryItem {
-            id: created_at_ms,
-            mode: record.mode.to_string(),
-            original_text: truncate_history_text(record.original_text),
-            result_text: truncate_history_text(record.result_text),
-            persona_id: record.persona_id.map(ToString::to_string),
-            action: record.action.to_string(),
-            replaced: record.replaced,
-            created_at_ms,
-        },
-    );
-    history.truncate(HISTORY_LIMIT);
+    insert_history_item(&mut history, build_history_item(record, created_at_ms));
     save(app, &history)
 }
 
@@ -98,6 +85,24 @@ fn history_path(app: &tauri::AppHandle) -> Result<PathBuf, String> {
         .map_err(|error| error.to_string())
 }
 
+fn build_history_item(record: RewriteHistoryRecord<'_>, created_at_ms: u64) -> RewriteHistoryItem {
+    RewriteHistoryItem {
+        id: created_at_ms,
+        mode: record.mode.to_string(),
+        original_text: truncate_history_text(record.original_text),
+        result_text: truncate_history_text(record.result_text),
+        persona_id: record.persona_id.map(ToString::to_string),
+        action: record.action.to_string(),
+        replaced: record.replaced,
+        created_at_ms,
+    }
+}
+
+fn insert_history_item(history: &mut Vec<RewriteHistoryItem>, item: RewriteHistoryItem) {
+    history.insert(0, item);
+    history.truncate(HISTORY_LIMIT);
+}
+
 fn truncate_history_text(text: &str) -> String {
     text.chars().take(HISTORY_TEXT_LIMIT).collect()
 }
@@ -111,4 +116,64 @@ fn current_time_millis() -> u64 {
 
 fn to_tauri_error(error: String) -> tauri::Error {
     tauri::Error::Io(std::io::Error::new(std::io::ErrorKind::Other, error))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn build_history_item_truncates_text_and_preserves_metadata() {
+        let original_text = "a".repeat(HISTORY_TEXT_LIMIT + 10);
+        let result_text = "b".repeat(HISTORY_TEXT_LIMIT + 20);
+
+        let item = build_history_item(
+            RewriteHistoryRecord {
+                mode: "safe",
+                original_text: &original_text,
+                result_text: &result_text,
+                persona_id: Some("clean-correction"),
+                action: "copied",
+                replaced: false,
+            },
+            42,
+        );
+
+        assert_eq!(item.id, 42);
+        assert_eq!(item.created_at_ms, 42);
+        assert_eq!(item.mode, "safe");
+        assert_eq!(item.persona_id.as_deref(), Some("clean-correction"));
+        assert_eq!(item.action, "copied");
+        assert!(!item.replaced);
+        assert_eq!(item.original_text.chars().count(), HISTORY_TEXT_LIMIT);
+        assert_eq!(item.result_text.chars().count(), HISTORY_TEXT_LIMIT);
+    }
+
+    #[test]
+    fn insert_history_item_keeps_newest_first_and_enforces_limit() {
+        let mut history = Vec::new();
+
+        for id in 0..(HISTORY_LIMIT as u64 + 5) {
+            insert_history_item(
+                &mut history,
+                RewriteHistoryItem {
+                    id,
+                    mode: "magic".to_string(),
+                    original_text: "original".to_string(),
+                    result_text: "result".to_string(),
+                    persona_id: None,
+                    action: "replaced".to_string(),
+                    replaced: true,
+                    created_at_ms: id,
+                },
+            );
+        }
+
+        assert_eq!(history.len(), HISTORY_LIMIT);
+        assert_eq!(
+            history.first().map(|item| item.id),
+            Some(HISTORY_LIMIT as u64 + 4)
+        );
+        assert_eq!(history.last().map(|item| item.id), Some(5));
+    }
 }
