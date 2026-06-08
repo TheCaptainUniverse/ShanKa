@@ -2,7 +2,7 @@
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "Shanka",
   "version": "0.1.0",
-  "identifier": "com.shanka.app",
+  "identifier": "com.shanka.desktop",
   "build": {
     "beforeDevCommand": "bun run dev:web",
     "devUrl": "http://localhost:1420",
@@ -24,6 +24,10 @@
   "bundle": {
     "active": true,
     "targets": "all",
+    "category": "Productivity",
+    "shortDescription": "System-level AI text refinement middleware",
+    "longDescription": "Shanka refines selected text from any desktop app with global hotkeys, clipboard capture, Safe Mode previews, Magic Mode replacement, local history, and privacy-aware provider settings.",
+    "copyright": "Copyright © 2026 Shanka",
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
