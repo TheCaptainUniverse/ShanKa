@@ -48,7 +48,7 @@ const providerPresets = [
     id: "deepseek",
     label: "DeepSeek",
     base_url: "https://api.deepseek.com",
-    model: "deepseek-chat",
+    model: "deepseek-v4-flash",
   },
   {
     id: "openai",
