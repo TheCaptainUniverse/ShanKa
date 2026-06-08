@@ -7,7 +7,7 @@ use std::{
 };
 use tauri::Manager;
 
-use crate::{keychain, persona};
+use crate::{autostart, keychain, persona};
 
 const CONFIG_FILE_NAME: &str = "config.json";
 const CONFIG_SCHEMA_VERSION: u16 = 1;
@@ -67,6 +67,7 @@ pub struct AppSettingsConfig {
     pub timeout_ms: u64,
     pub debug_logging: bool,
     pub history_enabled: bool,
+    pub launch_at_login: bool,
 }
 
 impl Default for AppSettingsConfig {
@@ -80,6 +81,7 @@ impl Default for AppSettingsConfig {
             timeout_ms: 8_000,
             debug_logging: false,
             history_enabled: true,
+            launch_at_login: false,
         }
     }
 }
@@ -201,6 +203,7 @@ pub fn save_settings(
         keychain::store_api_key(&settings.api_key).map_err(ConfigError::InvalidSettings)?
     };
     settings.api_key.clear();
+    autostart::set_enabled(app, settings.launch_at_login).map_err(ConfigError::InvalidSettings)?;
     config.settings = settings;
     save_app_config_at(&config_path(app)?, &config)?;
     apply_runtime_flags(&config);
@@ -260,6 +263,7 @@ impl AppSettingsConfig {
             timeout_ms: self.timeout_ms.clamp(1_000, 120_000),
             debug_logging: self.debug_logging,
             history_enabled: self.history_enabled,
+            launch_at_login: self.launch_at_login,
         })
     }
 
@@ -429,6 +433,7 @@ mod tests {
             base_url: " https://api.deepseek.com/ ".to_string(),
             model: " deepseek-v4-flash ".to_string(),
             timeout_ms: 250,
+            launch_at_login: true,
             ..AppSettingsConfig::default()
         };
 
@@ -438,5 +443,6 @@ mod tests {
         assert_eq!(normalized.base_url, "https://api.deepseek.com");
         assert_eq!(normalized.model, "deepseek-v4-flash");
         assert_eq!(normalized.timeout_ms, 1_000);
+        assert!(normalized.launch_at_login);
     }
 }

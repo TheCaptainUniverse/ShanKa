@@ -1,3 +1,4 @@
+mod autostart;
 mod bridge;
 mod clipboard;
 mod config;
@@ -33,7 +34,9 @@ fn get_hotkey_config(app: tauri::AppHandle) -> Result<config::HotkeyConfig, Stri
 
 #[tauri::command]
 fn get_app_settings(app: tauri::AppHandle) -> Result<config::AppSettingsConfig, String> {
-    config::load_settings(&app).map_err(|error| error.to_string())
+    let mut settings = config::load_settings(&app).map_err(|error| error.to_string())?;
+    settings.launch_at_login = autostart::is_enabled(&app).unwrap_or(settings.launch_at_login);
+    Ok(settings)
 }
 
 #[tauri::command]
@@ -163,6 +166,7 @@ pub fn run() {
             platform::setup(handle)?;
             window::setup(handle)?;
             tray::setup(handle)?;
+            autostart::setup(handle)?;
             config::setup(handle)?;
             history::setup(handle)?;
             clipboard::setup(handle)?;

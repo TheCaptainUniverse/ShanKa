@@ -45,6 +45,7 @@ type AppSettingsConfig = {
   timeout_ms: number;
   debug_logging: boolean;
   history_enabled: boolean;
+  launch_at_login: boolean;
 };
 type AppSettingsStatus = "idle" | "saved" | "error";
 type ProviderTestStatus = "idle" | "success" | "error";
@@ -100,6 +101,7 @@ const appSettings = ref<AppSettingsConfig>({
   timeout_ms: 8000,
   debug_logging: false,
   history_enabled: true,
+  launch_at_login: false,
 });
 const settingsLoading = ref(false);
 const settingsSaving = ref(false);
@@ -454,6 +456,7 @@ function appSettingsPayload(): AppSettingsConfig {
     timeout_ms: Math.round(appSettings.value.timeout_ms),
     debug_logging: appSettings.value.debug_logging,
     history_enabled: appSettings.value.history_enabled,
+    launch_at_login: appSettings.value.launch_at_login,
   };
 }
 
@@ -901,6 +904,9 @@ function formatSettingsError(error: unknown): TranslationKey {
   if (message.includes("system keychain") || message.includes("keychain")) {
     return "settings.general.keychainError";
   }
+  if (message.includes("launch-at-login")) {
+    return "settings.general.autostartError";
+  }
 
   return "settings.general.unknownError";
 }
@@ -1147,6 +1153,20 @@ function personaDescription(persona: PersonaDefinition) {
             </span>
             <input
               v-model="appSettings.history_enabled"
+              class="size-4 accent-shanka-primary"
+              :disabled="settingsLoading"
+              type="checkbox"
+              @change="markSettingsDirty"
+            />
+          </label>
+
+          <label class="flex items-center justify-between gap-4 rounded-md border border-shanka-border px-3 py-2">
+            <span>
+              <span class="block text-sm text-shanka-secondary">{{ t("settings.field.launchAtLogin") }}</span>
+              <span class="mt-1 block text-xs text-shanka-muted">{{ t("settings.general.launchAtLoginHint") }}</span>
+            </span>
+            <input
+              v-model="appSettings.launch_at_login"
               class="size-4 accent-shanka-primary"
               :disabled="settingsLoading"
               type="checkbox"

@@ -24,8 +24,9 @@ rewrite text.
 1. Open Shanka from the app window or system tray.
 2. Choose a provider preset such as DeepSeek, OpenAI, or OpenRouter.
 3. Enter the API key, Base URL, and model, then run the connection test.
-4. Save the settings and select text in any desktop app.
-5. Trigger Safe Mode first to verify the preview flow before using Magic Mode.
+4. Optionally enable Launch at Login if Shanka should start with the system.
+5. Save the settings and select text in any desktop app.
+6. Trigger Safe Mode first to verify the preview flow before using Magic Mode.
 
 API keys are stored in the system keychain when available. The app config stores
 only a key reference, not the plaintext key.
