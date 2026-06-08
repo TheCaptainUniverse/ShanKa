@@ -15,9 +15,17 @@ Useful commands:
 bun run dev:web
 bun run dev:server
 bun run dev:app
+bun run check
 bun run typecheck
 bun run db:generate
 bun run db:push
+bun run tauri build
+```
+
+Before packaging a release, run:
+
+```bash
+bun run check
 bun run tauri build
 ```
 
