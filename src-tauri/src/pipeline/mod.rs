@@ -46,6 +46,7 @@ impl PipelineError {
             Self::Selection(SelectionError::NoTextSelected) => "NO_TEXT_SELECTED",
             Self::Selection(SelectionError::Clipboard(_)) => "CLIPBOARD_ACCESS_FAILED",
             Self::Selection(SelectionError::Input(_)) => "PASTE_BLOCKED",
+            Self::Selection(SelectionError::PermissionDenied(_)) => "PLATFORM_PERMISSION_REQUIRED",
             Self::Selection(_) => "API_ERROR",
             Self::Rewrite(RewriteError::Config(_)) => "API_CONFIG_MISSING",
             Self::Rewrite(RewriteError::Timeout) => "NETWORK_TIMEOUT",
@@ -75,6 +76,11 @@ pub fn run(app: &tauri::AppHandle, mode: SelectionMode) -> Result<PipelineOutcom
     }
     crate::platform::remember_preview_target_window();
     hud::refining(app);
+    if let Some(message) = crate::platform::text_operation_permission_issue() {
+        let error = PipelineError::Selection(SelectionError::PermissionDenied(message.to_string()));
+        hud::error(app, error.error_code());
+        return Err(error);
+    }
 
     let outcome = match mode {
         SelectionMode::Safe => run_safe_preview(app),

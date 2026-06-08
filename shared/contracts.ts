@@ -23,6 +23,7 @@ export const ERROR_CODES = [
   "API_CONFIG_MISSING",
   "PASTE_BLOCKED",
   "CLIPBOARD_ACCESS_FAILED",
+  "PLATFORM_PERMISSION_REQUIRED",
 ] as const;
 
 export type ErrorCode = (typeof ERROR_CODES)[number];

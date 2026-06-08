@@ -36,6 +36,7 @@ pub enum SelectionError {
     NoTextSelected,
     #[allow(dead_code)]
     UnsupportedPlatformNativeProvider(&'static str),
+    PermissionDenied(String),
 }
 
 impl std::fmt::Display for SelectionError {
@@ -52,6 +53,7 @@ impl std::fmt::Display for SelectionError {
             SelectionError::UnsupportedPlatformNativeProvider(provider) => {
                 write!(formatter, "{provider} is not implemented yet")
             }
+            SelectionError::PermissionDenied(message) => write!(formatter, "{message}"),
         }
     }
 }

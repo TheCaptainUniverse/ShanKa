@@ -159,6 +159,8 @@ function errorMessage(errorCode?: ErrorCode | null) {
       return t("hud.error.clipboardAccessFailed");
     case "PASTE_BLOCKED":
       return t("hud.error.pasteBlocked");
+    case "PLATFORM_PERMISSION_REQUIRED":
+      return t("hud.error.platformPermissionRequired");
     case "API_ERROR":
     default:
       return t("hud.error.apiError");

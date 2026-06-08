@@ -1,7 +1,23 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref } from "vue";
 import { invoke } from "@tauri-apps/api/core";
-import { Copy, Keyboard, Pencil, Plus, Power, Save, Star, Sun, Moon, Trash2, X, Zap } from "lucide-vue-next";
+import {
+  Copy,
+  ExternalLink,
+  Keyboard,
+  Pencil,
+  Plus,
+  Power,
+  RefreshCw,
+  Save,
+  ShieldCheck,
+  Star,
+  Sun,
+  Moon,
+  Trash2,
+  X,
+  Zap,
+} from "lucide-vue-next";
 import { useI18n } from "@/i18n/useI18n";
 import type { Locale, TranslationKey } from "@/i18n/messages";
 import { useTheme } from "@/theme/useTheme";
@@ -27,6 +43,20 @@ type AppSettingsConfig = {
 type AppSettingsStatus = "idle" | "saved" | "error";
 type ProviderTestStatus = "idle" | "success" | "error";
 type PersonaStatus = "idle" | "saved" | "error";
+type PlatformCapability = {
+  status: "ok" | "warning" | "blocked" | "unknown";
+  messageKey: string;
+};
+type PlatformStatus = {
+  os: string;
+  accessibility: PlatformCapability;
+  globalHotkey: PlatformCapability;
+  clipboard: PlatformCapability;
+  inputSimulation: PlatformCapability;
+  linuxSession?: string | null;
+  notes: string[];
+  settingsActionAvailable: boolean;
+};
 type PersonaDraftMode = "create" | "edit";
 type PersonaDraft = {
   mode: PersonaDraftMode;
@@ -85,6 +115,9 @@ const settingsSaving = ref(false);
 const settingsDirty = ref(false);
 const settingsStatus = ref<AppSettingsStatus>("idle");
 const settingsErrorKey = ref<TranslationKey | null>(null);
+const platformStatus = ref<PlatformStatus | null>(null);
+const platformLoading = ref(false);
+const platformErrorKey = ref<TranslationKey | null>(null);
 const providerTesting = ref(false);
 const providerTestStatus = ref<ProviderTestStatus>("idle");
 const providerTestErrorKey = ref<TranslationKey | null>(null);
@@ -120,6 +153,7 @@ const themeLabels = computed<Record<Theme, string>>(() => ({
 }));
 
 const settingsErrorMessage = computed(() => (settingsErrorKey.value ? t(settingsErrorKey.value) : ""));
+const platformErrorMessage = computed(() => (platformErrorKey.value ? t(platformErrorKey.value) : ""));
 const providerTestErrorMessage = computed(() => (providerTestErrorKey.value ? t(providerTestErrorKey.value) : ""));
 const hotkeyErrorMessage = computed(() => (hotkeyErrorKey.value ? t(hotkeyErrorKey.value) : ""));
 const personaErrorMessage = computed(() => (personaErrorKey.value ? t(personaErrorKey.value) : ""));
@@ -158,6 +192,7 @@ onMounted(() => {
   void loadAppSettings();
   void loadHotkeys();
   void loadPersonas();
+  void loadPlatformStatus();
 });
 
 onUnmounted(() => {
@@ -199,6 +234,30 @@ async function loadAppSettings() {
     settingsErrorKey.value = formatSettingsError(error);
   } finally {
     settingsLoading.value = false;
+  }
+}
+
+async function loadPlatformStatus() {
+  platformLoading.value = true;
+  platformErrorKey.value = null;
+
+  try {
+    platformStatus.value = await invoke<PlatformStatus>("get_platform_status");
+  } catch (error) {
+    console.warn("[settings] failed to load platform status", error);
+    platformErrorKey.value = "settings.platform.loadFailed";
+  } finally {
+    platformLoading.value = false;
+  }
+}
+
+async function openPlatformPermissionSettings() {
+  try {
+    await invoke("open_platform_permission_settings");
+    void loadPlatformStatus();
+  } catch (error) {
+    console.warn("[settings] failed to open platform permission settings", error);
+    platformErrorKey.value = "settings.platform.openFailed";
   }
 }
 
@@ -668,6 +727,23 @@ function isApplePlatform() {
   return /Mac|iPhone|iPad|iPod/.test(navigator.platform);
 }
 
+function platformMessage(messageKey: string) {
+  return t(messageKey as TranslationKey);
+}
+
+function platformStatusClass(status: PlatformCapability["status"]) {
+  switch (status) {
+    case "ok":
+      return "text-shanka-success";
+    case "blocked":
+      return "text-shanka-danger";
+    case "warning":
+    case "unknown":
+    default:
+      return "text-shanka-muted";
+  }
+}
+
 function sanitizedPersonaConfig(): PersonaConfig {
   const items = personaConfig.value.items.map((persona) => ({
     ...persona,
@@ -879,6 +955,77 @@ function personaDescription(persona: PersonaDefinition) {
         </div>
 
         <form v-if="selectedTab === 'general'" class="mt-6 space-y-5" @submit.prevent="saveAppSettings">
+          <section class="rounded-md border border-shanka-border px-3 py-3">
+            <div class="flex flex-wrap items-center justify-between gap-3">
+              <div class="flex items-center gap-2 text-sm font-medium text-shanka-primary">
+                <ShieldCheck class="size-4" aria-hidden="true" />
+                <span>{{ t("settings.platform.title") }}</span>
+              </div>
+              <div class="flex items-center gap-1">
+                <button
+                  class="inline-flex size-8 items-center justify-center rounded-md text-shanka-muted transition hover:bg-shanka-hover/5 hover:text-shanka-primary disabled:cursor-not-allowed disabled:opacity-50"
+                  :title="t('settings.platform.refresh')"
+                  :aria-label="t('settings.platform.refresh')"
+                  :disabled="platformLoading"
+                  type="button"
+                  @click="loadPlatformStatus"
+                >
+                  <RefreshCw class="size-4" :class="platformLoading ? 'animate-spin' : ''" aria-hidden="true" />
+                </button>
+                <button
+                  v-if="platformStatus?.settingsActionAvailable"
+                  class="inline-flex size-8 items-center justify-center rounded-md text-shanka-muted transition hover:bg-shanka-hover/5 hover:text-shanka-primary"
+                  :title="t('settings.platform.openSettings')"
+                  :aria-label="t('settings.platform.openSettings')"
+                  type="button"
+                  @click="openPlatformPermissionSettings"
+                >
+                  <ExternalLink class="size-4" aria-hidden="true" />
+                </button>
+              </div>
+            </div>
+
+            <p v-if="platformErrorKey" class="mt-2 text-xs text-red-500 dark:text-red-400">
+              {{ platformErrorMessage }}
+            </p>
+            <p v-else-if="platformLoading" class="mt-2 text-xs text-shanka-muted">
+              {{ t("settings.platform.loading") }}
+            </p>
+            <div v-else-if="platformStatus" class="mt-3 grid gap-2 text-xs">
+              <div class="flex items-center justify-between gap-3">
+                <span class="text-shanka-muted">{{ t("settings.platform.accessibility") }}</span>
+                <span :class="platformStatusClass(platformStatus.accessibility.status)">
+                  {{ platformMessage(platformStatus.accessibility.messageKey) }}
+                </span>
+              </div>
+              <div class="flex items-center justify-between gap-3">
+                <span class="text-shanka-muted">{{ t("settings.platform.globalHotkey") }}</span>
+                <span :class="platformStatusClass(platformStatus.globalHotkey.status)">
+                  {{ platformMessage(platformStatus.globalHotkey.messageKey) }}
+                </span>
+              </div>
+              <div class="flex items-center justify-between gap-3">
+                <span class="text-shanka-muted">{{ t("settings.platform.clipboard") }}</span>
+                <span :class="platformStatusClass(platformStatus.clipboard.status)">
+                  {{ platformMessage(platformStatus.clipboard.messageKey) }}
+                </span>
+              </div>
+              <div class="flex items-center justify-between gap-3">
+                <span class="text-shanka-muted">{{ t("settings.platform.inputSimulation") }}</span>
+                <span :class="platformStatusClass(platformStatus.inputSimulation.status)">
+                  {{ platformMessage(platformStatus.inputSimulation.messageKey) }}
+                </span>
+              </div>
+              <div v-if="platformStatus.linuxSession" class="flex items-center justify-between gap-3">
+                <span class="text-shanka-muted">{{ t("settings.platform.linuxSession") }}</span>
+                <span class="text-shanka-primary">{{ platformStatus.linuxSession }}</span>
+              </div>
+              <p v-for="note in platformStatus.notes" :key="note" class="text-shanka-muted">
+                {{ platformMessage(note) }}
+              </p>
+            </div>
+          </section>
+
           <label class="block">
             <span class="mb-2 block text-sm text-shanka-secondary">{{ t("settings.field.provider") }}</span>
             <select

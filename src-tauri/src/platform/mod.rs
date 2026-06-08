@@ -1,6 +1,64 @@
+use serde::Serialize;
+
 pub fn setup(_app: &tauri::AppHandle) -> tauri::Result<()> {
     println!("[platform] platform adapter ready");
     Ok(())
+}
+
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PlatformStatus {
+    pub os: &'static str,
+    pub accessibility: PlatformCapability,
+    pub global_hotkey: PlatformCapability,
+    pub clipboard: PlatformCapability,
+    pub input_simulation: PlatformCapability,
+    pub linux_session: Option<String>,
+    pub notes: Vec<&'static str>,
+    pub settings_action_available: bool,
+}
+
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PlatformCapability {
+    pub status: &'static str,
+    pub message_key: &'static str,
+}
+
+#[allow(dead_code)]
+impl PlatformCapability {
+    fn ok(message_key: &'static str) -> Self {
+        Self {
+            status: "ok",
+            message_key,
+        }
+    }
+
+    fn warning(message_key: &'static str) -> Self {
+        Self {
+            status: "warning",
+            message_key,
+        }
+    }
+
+    fn blocked(message_key: &'static str) -> Self {
+        Self {
+            status: "blocked",
+            message_key,
+        }
+    }
+}
+
+pub fn status() -> PlatformStatus {
+    platform_status()
+}
+
+pub fn open_permission_settings() -> Result<(), String> {
+    open_platform_permission_settings()
+}
+
+pub fn text_operation_permission_issue() -> Option<&'static str> {
+    platform_text_operation_permission_issue()
 }
 
 #[cfg(target_os = "windows")]
@@ -26,6 +84,128 @@ pub fn primary_modifier_key() -> enigo::Key {
 #[cfg(not(any(target_os = "macos", target_os = "windows")))]
 pub fn primary_modifier_key() -> enigo::Key {
     enigo::Key::Control
+}
+
+#[cfg(target_os = "windows")]
+fn platform_status() -> PlatformStatus {
+    PlatformStatus {
+        os: "windows",
+        accessibility: PlatformCapability::ok("settings.platform.accessibility.notRequired"),
+        global_hotkey: PlatformCapability::ok("settings.platform.globalHotkey.ok"),
+        clipboard: PlatformCapability::ok("settings.platform.clipboard.ok"),
+        input_simulation: PlatformCapability::ok("settings.platform.input.ok"),
+        linux_session: None,
+        notes: vec!["settings.platform.note.windowsAdminFallback"],
+        settings_action_available: false,
+    }
+}
+
+#[cfg(target_os = "macos")]
+fn platform_status() -> PlatformStatus {
+    let accessibility_trusted = macos_accessibility_trusted();
+    PlatformStatus {
+        os: "macos",
+        accessibility: if accessibility_trusted {
+            PlatformCapability::ok("settings.platform.accessibility.granted")
+        } else {
+            PlatformCapability::blocked("settings.platform.accessibility.missing")
+        },
+        global_hotkey: PlatformCapability::ok("settings.platform.globalHotkey.ok"),
+        clipboard: PlatformCapability::ok("settings.platform.clipboard.ok"),
+        input_simulation: if accessibility_trusted {
+            PlatformCapability::ok("settings.platform.input.ok")
+        } else {
+            PlatformCapability::blocked("settings.platform.input.needsAccessibility")
+        },
+        linux_session: None,
+        notes: vec!["settings.platform.note.macosAccessibility"],
+        settings_action_available: true,
+    }
+}
+
+#[cfg(target_os = "linux")]
+fn platform_status() -> PlatformStatus {
+    let session = std::env::var("XDG_SESSION_TYPE")
+        .ok()
+        .filter(|value| !value.trim().is_empty())
+        .unwrap_or_else(|| "unknown".to_string());
+    let wayland = session.eq_ignore_ascii_case("wayland");
+
+    PlatformStatus {
+        os: "linux",
+        accessibility: PlatformCapability::warning("settings.platform.accessibility.linuxLimited"),
+        global_hotkey: if wayland {
+            PlatformCapability::warning("settings.platform.globalHotkey.waylandLimited")
+        } else {
+            PlatformCapability::ok("settings.platform.globalHotkey.x11Likely")
+        },
+        clipboard: if wayland {
+            PlatformCapability::warning("settings.platform.clipboard.waylandLimited")
+        } else {
+            PlatformCapability::ok("settings.platform.clipboard.x11Likely")
+        },
+        input_simulation: if wayland {
+            PlatformCapability::warning("settings.platform.input.waylandLimited")
+        } else {
+            PlatformCapability::ok("settings.platform.input.x11Likely")
+        },
+        linux_session: Some(session),
+        notes: if wayland {
+            vec!["settings.platform.note.linuxWayland"]
+        } else {
+            vec!["settings.platform.note.linuxX11"]
+        },
+        settings_action_available: false,
+    }
+}
+
+#[cfg(not(any(target_os = "windows", target_os = "macos", target_os = "linux")))]
+fn platform_status() -> PlatformStatus {
+    PlatformStatus {
+        os: "unknown",
+        accessibility: PlatformCapability::warning("settings.platform.accessibility.unknown"),
+        global_hotkey: PlatformCapability::warning("settings.platform.globalHotkey.unknown"),
+        clipboard: PlatformCapability::warning("settings.platform.clipboard.unknown"),
+        input_simulation: PlatformCapability::warning("settings.platform.input.unknown"),
+        linux_session: None,
+        notes: vec!["settings.platform.note.unknown"],
+        settings_action_available: false,
+    }
+}
+
+#[cfg(target_os = "macos")]
+fn platform_text_operation_permission_issue() -> Option<&'static str> {
+    (!macos_accessibility_trusted()).then_some("macOS Accessibility permission is required")
+}
+
+#[cfg(not(target_os = "macos"))]
+fn platform_text_operation_permission_issue() -> Option<&'static str> {
+    None
+}
+
+#[cfg(target_os = "macos")]
+fn open_platform_permission_settings() -> Result<(), String> {
+    std::process::Command::new("open")
+        .arg("x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility")
+        .spawn()
+        .map(|_| ())
+        .map_err(|error| format!("failed to open macOS Accessibility settings: {error}"))
+}
+
+#[cfg(not(target_os = "macos"))]
+fn open_platform_permission_settings() -> Result<(), String> {
+    Ok(())
+}
+
+#[cfg(target_os = "macos")]
+fn macos_accessibility_trusted() -> bool {
+    unsafe { AXIsProcessTrusted() != 0 }
+}
+
+#[cfg(target_os = "macos")]
+#[link(name = "ApplicationServices", kind = "framework")]
+extern "C" {
+    fn AXIsProcessTrusted() -> std::ffi::c_uchar;
 }
 
 #[cfg(target_os = "windows")]

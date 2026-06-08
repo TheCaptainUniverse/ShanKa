@@ -43,6 +43,16 @@ fn get_persona_config(app: tauri::AppHandle) -> Result<persona::PersonaConfig, S
 }
 
 #[tauri::command]
+fn get_platform_status() -> platform::PlatformStatus {
+    platform::status()
+}
+
+#[tauri::command]
+fn open_platform_permission_settings() -> Result<(), String> {
+    platform::open_permission_settings()
+}
+
+#[tauri::command]
 fn save_hotkey_config(
     app: tauri::AppHandle,
     hotkeys: config::HotkeyConfig,
@@ -136,6 +146,8 @@ pub fn run() {
             get_app_settings,
             get_hotkey_config,
             get_persona_config,
+            get_platform_status,
+            open_platform_permission_settings,
             save_app_settings,
             test_provider_connection,
             save_hotkey_config,
