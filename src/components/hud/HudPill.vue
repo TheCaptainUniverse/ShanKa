@@ -53,6 +53,9 @@ const previewId = computed(() => currentHud.value.previewId ?? null);
 const isRefining = computed(() => currentHud.value.status === "refining");
 const isError = computed(() => currentHud.value.status === "error");
 const isPreview = computed(() => currentHud.value.status === "preview" && previewText.value !== "");
+const previewErrorMessage = computed(() =>
+  isPreview.value && currentHud.value.errorCode ? errorMessage(currentHud.value.errorCode) : "",
+);
 const selectedPersona = computed(
   () =>
     personaOptions.value.find((persona) => persona.id === selectedPersonaId.value) ??
@@ -123,11 +126,14 @@ async function loadPersonaConfig() {
 }
 
 function applyHudUpdate(update: HudUpdate) {
+  const previousPreviewId = previewId.value;
   setHud(update);
   busyAction.value = null;
 
   if (update.status === "preview") {
-    editablePreviewText.value = update.message ?? "";
+    if (!update.errorCode || update.previewId !== previousPreviewId) {
+      editablePreviewText.value = update.message ?? "";
+    }
     void loadPersonaConfig();
   } else {
     editablePreviewText.value = "";
@@ -248,6 +254,13 @@ function handleKeydown(event: KeyboardEvent) {
         class="h-full w-full resize-none bg-transparent text-[13px] leading-5 text-shanka-secondary outline-none placeholder:text-shanka-muted disabled:opacity-70"
         :disabled="busyAction !== null"
       />
+    </div>
+
+    <div
+      v-if="previewErrorMessage"
+      class="border-t border-shanka-border px-3 py-1 text-[11px] leading-4 text-shanka-danger"
+    >
+      {{ previewErrorMessage }}
     </div>
 
     <div class="flex h-11 items-center justify-between gap-2 border-t border-shanka-border px-2">

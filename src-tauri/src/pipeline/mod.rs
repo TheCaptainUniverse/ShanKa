@@ -70,6 +70,9 @@ impl std::error::Error for PipelineError {}
 
 pub fn run(app: &tauri::AppHandle, mode: SelectionMode) -> Result<PipelineOutcome, PipelineError> {
     let started_at = Instant::now();
+    if let Err(error) = clear_any_safe_preview() {
+        println!("[pipeline] failed to clear stale Safe Mode preview before new run: {error}");
+    }
     hud::refining(app);
 
     let outcome = match mode {
@@ -144,7 +147,12 @@ pub fn regenerate_safe_preview(app: tauri::AppHandle, preview_id: u64, persona_i
         ) {
             Ok(rewrite) => rewrite,
             Err(error) => {
-                hud::error(&app, PipelineError::Rewrite(error).error_code());
+                let error_code = PipelineError::Rewrite(error).error_code();
+                if let Err(state_error) = show_safe_preview_error(&app, preview_id, error_code) {
+                    println!(
+                        "[pipeline] Safe Mode preview {preview_id} was dismissed before regeneration failed: {state_error}"
+                    );
+                }
                 return;
             }
         };
@@ -356,5 +364,21 @@ fn replace_safe_preview_state(preview: SafePreview) -> Result<(), SelectionError
         .lock()
         .map_err(|error| SelectionError::Clipboard(format!("safe preview lock failed: {error}")))?;
     *preview_slot = Some(preview);
+    Ok(())
+}
+
+fn show_safe_preview_error(
+    app: &tauri::AppHandle,
+    preview_id: u64,
+    error_code: &'static str,
+) -> Result<(), SelectionError> {
+    let preview = current_safe_preview(preview_id)?;
+    hud::preview_error(
+        app,
+        preview.id,
+        preview.replacement_text,
+        preview.persona_id,
+        error_code,
+    );
     Ok(())
 }

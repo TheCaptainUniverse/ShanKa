@@ -56,6 +56,23 @@ pub fn preview(
     );
 }
 
+pub fn preview_error(
+    app: &tauri::AppHandle,
+    preview_id: u64,
+    text: impl Into<String>,
+    persona_id: impl Into<String>,
+    error_code: &'static str,
+) {
+    emit(
+        app,
+        "preview",
+        Some(text.into()),
+        Some(error_code),
+        Some(preview_id),
+        Some(persona_id.into()),
+    );
+}
+
 pub fn replaced(app: &tauri::AppHandle) {
     emit(app, "replaced", None, None, None, None);
 }
