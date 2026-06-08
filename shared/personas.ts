@@ -3,11 +3,17 @@ import personasData from "./personas.json";
 export interface PersonaDefinition {
   id: string;
   name: string;
+  description: string;
   nameKey: string;
   descriptionKey: string;
   systemPrompt: string;
   builtIn: boolean;
   enabled: boolean;
+}
+
+export interface PersonaConfig {
+  defaultSafePersonaId: string;
+  items: PersonaDefinition[];
 }
 
 interface PersonaCatalog {

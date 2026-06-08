@@ -6,7 +6,15 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import { Check, ChevronDown, Copy, LoaderCircle, RefreshCw, Replace, Search, X } from "lucide-vue-next";
 import { useI18n } from "@/i18n/useI18n";
 import { useHud } from "@/composables/useHud";
-import { DEFAULT_SAFE_PERSONA_ID, ENABLED_PERSONAS, TAURI_EVENTS, type ErrorCode, type HudUpdate, type PersonaDefinition } from "@shared";
+import {
+  BUILT_IN_PERSONAS,
+  DEFAULT_SAFE_PERSONA_ID,
+  TAURI_EVENTS,
+  type ErrorCode,
+  type HudUpdate,
+  type PersonaConfig,
+  type PersonaDefinition,
+} from "@shared";
 import type { TranslationKey } from "@/i18n/messages";
 
 type PreviewAction = "copy" | "replace" | "regenerate";
@@ -14,7 +22,7 @@ type PreviewAction = "copy" | "replace" | "regenerate";
 const { t } = useI18n();
 const { currentHud, setHud } = useHud();
 const hudWindow = getCurrentWindow();
-const personaOptions = ENABLED_PERSONAS;
+const personaOptions = ref<PersonaDefinition[]>(BUILT_IN_PERSONAS.filter((persona) => persona.enabled));
 const selectedPersonaId = ref(DEFAULT_SAFE_PERSONA_ID);
 const personaSearch = ref("");
 const personaSelectOpen = ref(false);
@@ -45,18 +53,23 @@ const isRefining = computed(() => currentHud.value.status === "refining");
 const isError = computed(() => currentHud.value.status === "error");
 const isPreview = computed(() => currentHud.value.status === "preview" && previewText.value !== "");
 const selectedPersona = computed(
-  () => personaOptions.find((persona) => persona.id === selectedPersonaId.value) ?? personaOptions[0]!,
+  () =>
+    personaOptions.value.find((persona) => persona.id === selectedPersonaId.value) ??
+    personaOptions.value[0] ??
+    BUILT_IN_PERSONAS[0],
 );
 const filteredPersonas = computed(() => {
   const query = personaSearch.value.trim().toLocaleLowerCase();
   if (!query) {
-    return personaOptions;
+    return personaOptions.value;
   }
 
-  return personaOptions.filter((persona) => personaLabel(persona).toLocaleLowerCase().includes(query));
+  return personaOptions.value.filter((persona) => personaLabel(persona).toLocaleLowerCase().includes(query));
 });
 
 onMounted(() => {
+  void loadPersonaConfig();
+
   void listen<HudUpdate>(TAURI_EVENTS.hudUpdate, (event) => {
     applyHudUpdate(event.payload);
   }).then((unlisten) => {
@@ -91,9 +104,30 @@ async function syncLatestHudState() {
   }
 }
 
+async function loadPersonaConfig() {
+  try {
+    const config = await invoke<PersonaConfig>("get_persona_config");
+    const enabledPersonas = config.items.filter((persona) => persona.enabled);
+    personaOptions.value = enabledPersonas.length > 0 ? enabledPersonas : BUILT_IN_PERSONAS.filter((persona) => persona.enabled);
+
+    if (!personaOptions.value.some((persona) => persona.id === selectedPersonaId.value)) {
+      selectedPersonaId.value =
+        personaOptions.value.find((persona) => persona.id === config.defaultSafePersonaId)?.id ??
+        personaOptions.value[0]?.id ??
+        DEFAULT_SAFE_PERSONA_ID;
+    }
+  } catch (error) {
+    console.warn("[hud] failed to load persona config", error);
+  }
+}
+
 function applyHudUpdate(update: HudUpdate) {
   setHud(update);
   busyAction.value = null;
+
+  if (update.status === "preview") {
+    void loadPersonaConfig();
+  }
 
   if (update.personaId) {
     selectedPersonaId.value = update.personaId;
@@ -155,7 +189,7 @@ function commandForAction(action: PreviewAction) {
 }
 
 function personaLabel(persona: PersonaDefinition) {
-  return t(persona.nameKey as TranslationKey);
+  return persona.nameKey ? t(persona.nameKey as TranslationKey) : persona.name;
 }
 
 function selectPersona(personaId: string) {

@@ -29,6 +29,7 @@ impl Default for PersonaConfig {
 pub struct PersonaConfigItem {
     pub id: String,
     pub name: String,
+    pub description: String,
     pub name_key: String,
     pub description_key: String,
     pub system_prompt: String,
@@ -41,6 +42,7 @@ impl Default for PersonaConfigItem {
         Self {
             id: String::new(),
             name: String::new(),
+            description: String::new(),
             name_key: String::new(),
             description_key: String::new(),
             system_prompt: String::new(),

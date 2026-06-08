@@ -1,12 +1,12 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref } from "vue";
 import { invoke } from "@tauri-apps/api/core";
-import { Keyboard, Save, Sun, Moon } from "lucide-vue-next";
+import { Copy, Keyboard, Pencil, Plus, Power, Save, Star, Sun, Moon, Trash2, X } from "lucide-vue-next";
 import { useI18n } from "@/i18n/useI18n";
 import type { Locale, TranslationKey } from "@/i18n/messages";
 import { useTheme } from "@/theme/useTheme";
 import type { Theme } from "@/theme/useTheme";
-import { BUILT_IN_PERSONAS, DEFAULT_SAFE_PERSONA_ID, type PersonaDefinition } from "@shared";
+import { BUILT_IN_PERSONAS, DEFAULT_SAFE_PERSONA_ID, type PersonaConfig, type PersonaDefinition } from "@shared";
 
 type SettingsTab = "general" | "personas" | "hotkeys";
 type HotkeyField = "safe_mode" | "magic_mode";
@@ -22,6 +22,13 @@ type AppSettingsConfig = {
   timeout_ms: number;
 };
 type AppSettingsStatus = "idle" | "saved" | "error";
+type PersonaStatus = "idle" | "saved" | "error";
+type PersonaDraftMode = "create" | "edit";
+type PersonaDraft = {
+  mode: PersonaDraftMode;
+  originalId: string | null;
+  item: PersonaDefinition;
+};
 
 const { locale, locales, setLocale, t } = useI18n();
 const { setTheme, theme, themes } = useTheme();
@@ -31,8 +38,6 @@ const navItems = [
   { id: "personas", label: "settings.nav.personas" },
   { id: "hotkeys", label: "settings.nav.hotkeys" },
 ] as const satisfies readonly { id: SettingsTab; label: TranslationKey }[];
-
-const personas = BUILT_IN_PERSONAS;
 
 const selectedTab = ref<SettingsTab>("general");
 const appSettings = ref<AppSettingsConfig>({
@@ -56,6 +61,16 @@ const hotkeysDirty = ref(false);
 const hotkeyStatus = ref<HotkeyStatus>("idle");
 const hotkeyErrorKey = ref<TranslationKey | null>(null);
 const recordingHotkeyField = ref<HotkeyField | null>(null);
+const personaConfig = ref<PersonaConfig>({
+  defaultSafePersonaId: DEFAULT_SAFE_PERSONA_ID,
+  items: [...BUILT_IN_PERSONAS],
+});
+const personasLoading = ref(false);
+const personasSaving = ref(false);
+const personasDirty = ref(false);
+const personaStatus = ref<PersonaStatus>("idle");
+const personaErrorKey = ref<TranslationKey | null>(null);
+const personaDraft = ref<PersonaDraft | null>(null);
 
 const localeLabels = computed<Record<Locale, string>>(() => ({
   "zh-CN": t("settings.locale.zh"),
@@ -69,6 +84,13 @@ const themeLabels = computed<Record<Theme, string>>(() => ({
 
 const settingsErrorMessage = computed(() => (settingsErrorKey.value ? t(settingsErrorKey.value) : ""));
 const hotkeyErrorMessage = computed(() => (hotkeyErrorKey.value ? t(hotkeyErrorKey.value) : ""));
+const personaErrorMessage = computed(() => (personaErrorKey.value ? t(personaErrorKey.value) : ""));
+const enabledPersonaCount = computed(() => personaConfig.value.items.filter((persona) => persona.enabled).length);
+const canSavePersonas = computed(() => !personasLoading.value && !personasSaving.value && personasDirty.value);
+const canSubmitPersonaDraft = computed(() => {
+  const draft = personaDraft.value;
+  return Boolean(draft?.item.name.trim() && draft.item.systemPrompt.trim());
+});
 
 const canSaveSettings = computed(
   () =>
@@ -89,6 +111,7 @@ const canSaveHotkeys = computed(
 onMounted(() => {
   void loadAppSettings();
   void loadHotkeys();
+  void loadPersonas();
 });
 
 onUnmounted(() => {
@@ -127,6 +150,23 @@ async function loadAppSettings() {
   }
 }
 
+async function loadPersonas() {
+  personasLoading.value = true;
+  personaErrorKey.value = null;
+
+  try {
+    personaConfig.value = await invoke<PersonaConfig>("get_persona_config");
+    personasDirty.value = false;
+    personaStatus.value = "idle";
+    personaDraft.value = null;
+  } catch (error) {
+    personaStatus.value = "error";
+    personaErrorKey.value = formatPersonaError(error);
+  } finally {
+    personasLoading.value = false;
+  }
+}
+
 async function saveAppSettings() {
   if (!canSaveSettings.value) {
     return;
@@ -152,6 +192,29 @@ async function saveAppSettings() {
     settingsErrorKey.value = formatSettingsError(error);
   } finally {
     settingsSaving.value = false;
+  }
+}
+
+async function savePersonas() {
+  if (!canSavePersonas.value) {
+    return;
+  }
+
+  personasSaving.value = true;
+  personaErrorKey.value = null;
+
+  try {
+    personaConfig.value = await invoke<PersonaConfig>("save_persona_config", {
+      personas: sanitizedPersonaConfig(),
+    });
+    personasDirty.value = false;
+    personaStatus.value = "saved";
+    personaDraft.value = null;
+  } catch (error) {
+    personaStatus.value = "error";
+    personaErrorKey.value = formatPersonaError(error);
+  } finally {
+    personasSaving.value = false;
   }
 }
 
@@ -202,6 +265,132 @@ function markSettingsDirty() {
   if (settingsStatus.value === "saved") {
     settingsStatus.value = "idle";
   }
+}
+
+function markPersonasDirty() {
+  personasDirty.value = true;
+  if (personaStatus.value === "saved") {
+    personaStatus.value = "idle";
+  }
+}
+
+function startCreatePersona() {
+  personaDraft.value = {
+    mode: "create",
+    originalId: null,
+    item: createCustomPersona(),
+  };
+  personaStatus.value = "idle";
+  personaErrorKey.value = null;
+}
+
+function startEditPersona(persona: PersonaDefinition) {
+  if (persona.builtIn) {
+    return;
+  }
+
+  personaDraft.value = {
+    mode: "edit",
+    originalId: persona.id,
+    item: clonePersona(persona),
+  };
+  personaStatus.value = "idle";
+  personaErrorKey.value = null;
+}
+
+function copyPersona(persona: PersonaDefinition) {
+  personaDraft.value = {
+    mode: "create",
+    originalId: null,
+    item: {
+      ...clonePersona(persona),
+      id: createPersonaId(persona.name),
+      name: `${personaName(persona)} ${t("settings.personas.copySuffix")}`,
+      nameKey: "",
+      descriptionKey: "",
+      builtIn: false,
+      enabled: true,
+    },
+  };
+  personaStatus.value = "idle";
+  personaErrorKey.value = null;
+}
+
+function cancelPersonaDraft() {
+  personaDraft.value = null;
+}
+
+function submitPersonaDraft() {
+  const draft = personaDraft.value;
+  if (!draft || !canSubmitPersonaDraft.value) {
+    return;
+  }
+
+  const item = {
+    ...draft.item,
+    name: draft.item.name.trim(),
+    description: draft.item.description?.trim() ?? "",
+    systemPrompt: draft.item.systemPrompt.trim(),
+    nameKey: "",
+    descriptionKey: "",
+    builtIn: false,
+    enabled: true,
+  };
+
+  if (draft.mode === "edit" && draft.originalId) {
+    personaConfig.value.items = personaConfig.value.items.map((persona) =>
+      persona.id === draft.originalId ? item : persona,
+    );
+  } else {
+    personaConfig.value.items = [...personaConfig.value.items, item];
+  }
+
+  personaDraft.value = null;
+  markPersonasDirty();
+}
+
+function setDefaultPersona(personaId: string) {
+  if (!personaConfig.value.items.some((persona) => persona.id === personaId && persona.enabled)) {
+    return;
+  }
+
+  personaConfig.value.defaultSafePersonaId = personaId;
+  markPersonasDirty();
+}
+
+function togglePersona(persona: PersonaDefinition) {
+  if (persona.enabled && enabledPersonaCount.value <= 1) {
+    personaStatus.value = "error";
+    personaErrorKey.value = "settings.personas.needEnabled";
+    return;
+  }
+
+  personaConfig.value.items = personaConfig.value.items.map((item) =>
+    item.id === persona.id ? { ...item, enabled: !item.enabled } : item,
+  );
+
+  if (personaConfig.value.defaultSafePersonaId === persona.id && persona.enabled) {
+    personaConfig.value.defaultSafePersonaId = nextEnabledPersonaId(persona.id);
+  }
+
+  markPersonasDirty();
+}
+
+function deletePersona(persona: PersonaDefinition) {
+  if (persona.builtIn) {
+    return;
+  }
+
+  personaConfig.value.items = personaConfig.value.items.filter((item) => item.id !== persona.id);
+  if (personaConfig.value.defaultSafePersonaId === persona.id) {
+    personaConfig.value.defaultSafePersonaId = nextEnabledPersonaId(persona.id);
+  }
+
+  if (personaDraft.value?.originalId === persona.id) {
+    personaDraft.value = null;
+  }
+
+  markPersonasDirty();
 }
 
 async function startRecordingHotkey(field: HotkeyField) {
@@ -373,6 +562,73 @@ function isApplePlatform() {
   return /Mac|iPhone|iPad|iPod/.test(navigator.platform);
 }
 
+function sanitizedPersonaConfig(): PersonaConfig {
+  const items = personaConfig.value.items.map((persona) => ({
+    ...persona,
+    id: persona.id.trim(),
+    name: persona.name.trim(),
+    description: persona.description?.trim() ?? "",
+    nameKey: persona.nameKey.trim(),
+    descriptionKey: persona.descriptionKey.trim(),
+    systemPrompt: persona.systemPrompt.trim(),
+  }));
+  const defaultSafePersonaId =
+    items.find((persona) => persona.enabled && persona.id === personaConfig.value.defaultSafePersonaId)?.id ??
+    items.find((persona) => persona.enabled)?.id ??
+    DEFAULT_SAFE_PERSONA_ID;
+
+  return {
+    defaultSafePersonaId,
+    items,
+  };
+}
+
+function createCustomPersona(): PersonaDefinition {
+  return {
+    id: createPersonaId(),
+    name: "",
+    description: "",
+    nameKey: "",
+    descriptionKey: "",
+    systemPrompt: "",
+    builtIn: false,
+    enabled: true,
+  };
+}
+
+function clonePersona(persona: PersonaDefinition): PersonaDefinition {
+  return {
+    ...persona,
+    description: persona.description ?? "",
+  };
+}
+
+function createPersonaId(seed = "persona") {
+  const slug =
+    seed
+      .trim()
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-|-$/g, "") || "persona";
+  let id = `custom-${slug}`;
+  let index = 2;
+  const usedIds = new Set(personaConfig.value.items.map((persona) => persona.id));
+
+  while (usedIds.has(id)) {
+    id = `custom-${slug}-${index}`;
+    index += 1;
+  }
+
+  return id;
+}
+
+function nextEnabledPersonaId(excludedPersonaId: string) {
+  return (
+    personaConfig.value.items.find((persona) => persona.enabled && persona.id !== excludedPersonaId)?.id ??
+    DEFAULT_SAFE_PERSONA_ID
+  );
+}
+
 function formatHotkeyError(error: unknown): TranslationKey {
   const message = error instanceof Error ? error.message : String(error);
 
@@ -408,12 +664,22 @@ function formatSettingsError(error: unknown): TranslationKey {
   return "settings.general.unknownError";
 }
 
+function formatPersonaError(error: unknown): TranslationKey {
+  const message = error instanceof Error ? error.message : String(error);
+
+  if (message.includes("at least one enabled persona")) {
+    return "settings.personas.needEnabled";
+  }
+
+  return "settings.personas.unknownError";
+}
+
 function personaName(persona: PersonaDefinition) {
-  return t(persona.nameKey as TranslationKey);
+  return persona.nameKey ? t(persona.nameKey as TranslationKey) : persona.name;
 }
 
 function personaDescription(persona: PersonaDefinition) {
-  return t(persona.descriptionKey as TranslationKey);
+  return persona.descriptionKey ? t(persona.descriptionKey as TranslationKey) : (persona.description ?? "");
 }
 </script>
 
@@ -554,24 +820,198 @@ function personaDescription(persona: PersonaDefinition) {
           </div>
         </form>
 
-        <div v-else-if="selectedTab === 'personas'" class="mt-6">
-          <div class="mb-2 text-sm text-shanka-secondary">{{ t("settings.field.activePersona") }}</div>
-          <div class="divide-y divide-shanka-border rounded-md border border-shanka-border">
+        <div v-else-if="selectedTab === 'personas'" class="mt-6 space-y-5">
+          <div class="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <div class="text-sm text-shanka-secondary">{{ t("settings.field.activePersona") }}</div>
+              <p class="mt-1 text-xs text-shanka-muted">{{ t("settings.personas.defaultHint") }}</p>
+            </div>
             <button
-              v-for="persona in personas"
-              :key="persona.id"
-              class="flex min-h-14 w-full items-center justify-between gap-4 px-3 py-2 text-sm text-shanka-secondary transition hover:bg-shanka-hover/5"
+              class="inline-flex h-9 items-center gap-2 rounded-md border border-shanka-border px-3 text-sm text-shanka-secondary transition hover:bg-shanka-hover/5 hover:text-shanka-primary disabled:cursor-not-allowed disabled:opacity-60"
+              :disabled="personasLoading"
               type="button"
+              @click="startCreatePersona"
             >
-              <span class="min-w-0">
-                <span class="block truncate text-shanka-primary">{{ personaName(persona) }}</span>
-                <span class="mt-1 block line-clamp-2 text-xs text-shanka-muted">
-                  {{ personaDescription(persona) }}
+              <Plus class="size-4" aria-hidden="true" />
+              <span>{{ t("settings.personas.add") }}</span>
+            </button>
+          </div>
+
+          <form
+            v-if="personaDraft"
+            class="space-y-4 rounded-md border border-shanka-border p-3"
+            @submit.prevent="submitPersonaDraft"
+          >
+            <div class="flex items-center justify-between gap-3">
+              <div class="text-sm font-medium text-shanka-primary">
+                {{
+                  personaDraft.mode === "edit"
+                    ? t("settings.personas.editTitle")
+                    : t("settings.personas.createTitle")
+                }}
+              </div>
+              <button
+                class="inline-flex size-8 items-center justify-center rounded-md text-shanka-muted transition hover:bg-shanka-hover/5 hover:text-shanka-primary"
+                :title="t('settings.personas.cancel')"
+                :aria-label="t('settings.personas.cancel')"
+                type="button"
+                @click="cancelPersonaDraft"
+              >
+                <X class="size-4" aria-hidden="true" />
+              </button>
+            </div>
+
+            <label class="block">
+              <span class="mb-2 block text-sm text-shanka-secondary">{{ t("settings.personas.name") }}</span>
+              <input
+                v-model.trim="personaDraft.item.name"
+                class="h-10 w-full rounded-md border border-transparent bg-shanka-input px-3 text-sm text-shanka-primary outline-none transition focus:border-shanka-focus"
+                type="text"
+              />
+            </label>
+
+            <label class="block">
+              <span class="mb-2 block text-sm text-shanka-secondary">{{ t("settings.personas.description") }}</span>
+              <input
+                v-model.trim="personaDraft.item.description"
+                class="h-10 w-full rounded-md border border-transparent bg-shanka-input px-3 text-sm text-shanka-primary outline-none transition focus:border-shanka-focus"
+                type="text"
+              />
+            </label>
+
+            <label class="block">
+              <span class="mb-2 block text-sm text-shanka-secondary">{{ t("settings.personas.systemPrompt") }}</span>
+              <textarea
+                v-model.trim="personaDraft.item.systemPrompt"
+                class="h-28 w-full resize-none rounded-md border border-transparent bg-shanka-input px-3 py-2 text-sm text-shanka-primary outline-none transition focus:border-shanka-focus"
+              />
+            </label>
+
+            <div class="flex justify-end">
+              <button
+                class="inline-flex h-9 items-center gap-2 rounded-md bg-shanka-primary px-3 text-sm text-shanka-canvas transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
+                :disabled="!canSubmitPersonaDraft"
+                type="submit"
+              >
+                <Save class="size-4" aria-hidden="true" />
+                <span>
+                  {{
+                    personaDraft.mode === "edit"
+                      ? t("settings.personas.update")
+                      : t("settings.personas.create")
+                  }}
                 </span>
-              </span>
-              <span v-if="persona.id === DEFAULT_SAFE_PERSONA_ID" class="shrink-0 text-xs text-shanka-success">
-                {{ t("settings.status.active") }}
-              </span>
+              </button>
+            </div>
+          </form>
+
+          <p v-if="personasLoading" class="text-xs text-shanka-muted">
+            {{ t("settings.personas.loading") }}
+          </p>
+
+          <div v-else class="divide-y divide-shanka-border rounded-md border border-shanka-border">
+            <div
+              v-for="persona in personaConfig.items"
+              :key="persona.id"
+              class="flex min-h-16 items-center justify-between gap-4 px-3 py-2 text-sm text-shanka-secondary"
+            >
+              <div class="min-w-0">
+                <div class="flex flex-wrap items-center gap-2">
+                  <span class="truncate text-shanka-primary">{{ personaName(persona) }}</span>
+                  <span
+                    v-if="persona.id === personaConfig.defaultSafePersonaId"
+                    class="rounded border border-shanka-success/40 px-1.5 py-0.5 text-[11px] text-shanka-success"
+                  >
+                    {{ t("settings.personas.defaultBadge") }}
+                  </span>
+                  <span class="rounded border border-shanka-border px-1.5 py-0.5 text-[11px] text-shanka-muted">
+                    {{ persona.builtIn ? t("settings.personas.builtIn") : t("settings.personas.custom") }}
+                  </span>
+                  <span
+                    v-if="!persona.enabled"
+                    class="rounded border border-shanka-border px-1.5 py-0.5 text-[11px] text-shanka-muted"
+                  >
+                    {{ t("settings.personas.disabled") }}
+                  </span>
+                </div>
+                <div class="mt-1 line-clamp-2 text-xs text-shanka-muted">
+                  {{ personaDescription(persona) }}
+                </div>
+              </div>
+
+              <div class="flex shrink-0 items-center gap-1">
+                <button
+                  class="inline-flex size-8 items-center justify-center rounded-md text-shanka-muted transition hover:bg-shanka-hover/5 hover:text-shanka-primary disabled:cursor-not-allowed disabled:opacity-40"
+                  :title="t('settings.personas.setDefault')"
+                  :aria-label="t('settings.personas.setDefault')"
+                  :disabled="!persona.enabled || persona.id === personaConfig.defaultSafePersonaId"
+                  type="button"
+                  @click="setDefaultPersona(persona.id)"
+                >
+                  <Star class="size-4" aria-hidden="true" />
+                </button>
+                <button
+                  class="inline-flex size-8 items-center justify-center rounded-md text-shanka-muted transition hover:bg-shanka-hover/5 hover:text-shanka-primary disabled:cursor-not-allowed disabled:opacity-40"
+                  :title="persona.enabled ? t('settings.personas.disable') : t('settings.personas.enable')"
+                  :aria-label="persona.enabled ? t('settings.personas.disable') : t('settings.personas.enable')"
+                  :disabled="persona.enabled && enabledPersonaCount <= 1"
+                  type="button"
+                  @click="togglePersona(persona)"
+                >
+                  <Power class="size-4" aria-hidden="true" />
+                </button>
+                <button
+                  class="inline-flex size-8 items-center justify-center rounded-md text-shanka-muted transition hover:bg-shanka-hover/5 hover:text-shanka-primary"
+                  :title="t('settings.personas.copy')"
+                  :aria-label="t('settings.personas.copy')"
+                  type="button"
+                  @click="copyPersona(persona)"
+                >
+                  <Copy class="size-4" aria-hidden="true" />
+                </button>
+                <button
+                  v-if="!persona.builtIn"
+                  class="inline-flex size-8 items-center justify-center rounded-md text-shanka-muted transition hover:bg-shanka-hover/5 hover:text-shanka-primary"
+                  :title="t('settings.personas.edit')"
+                  :aria-label="t('settings.personas.edit')"
+                  type="button"
+                  @click="startEditPersona(persona)"
+                >
+                  <Pencil class="size-4" aria-hidden="true" />
+                </button>
+                <button
+                  v-if="!persona.builtIn"
+                  class="inline-flex size-8 items-center justify-center rounded-md text-shanka-muted transition hover:bg-shanka-hover/5 hover:text-shanka-danger"
+                  :title="t('settings.personas.delete')"
+                  :aria-label="t('settings.personas.delete')"
+                  type="button"
+                  @click="deletePersona(persona)"
+                >
+                  <Trash2 class="size-4" aria-hidden="true" />
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <div class="flex flex-wrap items-center justify-between gap-3">
+            <p v-if="personaStatus === 'error'" class="text-xs text-red-500 dark:text-red-400">
+              {{ t("settings.personas.errorPrefix") }}: {{ personaErrorMessage }}
+            </p>
+            <p v-else-if="personaStatus === 'saved'" class="text-xs text-shanka-success">
+              {{ t("settings.personas.saved") }}
+            </p>
+            <p v-else class="text-xs text-shanka-muted">
+              {{ t("settings.personas.saveHint") }}
+            </p>
+
+            <button
+              class="inline-flex h-9 items-center gap-2 rounded-md bg-shanka-primary px-3 text-sm text-shanka-canvas transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
+              :disabled="!canSavePersonas"
+              type="button"
+              @click="savePersonas"
+            >
+              <Save class="size-4" aria-hidden="true" />
+              <span>{{ personasSaving ? t("settings.personas.saving") : t("settings.personas.save") }}</span>
             </button>
           </div>
         </div>
