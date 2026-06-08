@@ -3,6 +3,8 @@ use serde::{Deserialize, Serialize};
 use std::{fs, path::PathBuf};
 use tauri::Manager;
 
+use crate::persona;
+
 const CONFIG_FILE_NAME: &str = "config.json";
 const CONFIG_SCHEMA_VERSION: u16 = 1;
 
@@ -12,6 +14,7 @@ pub struct AppConfig {
     pub schema_version: u16,
     pub hotkeys: HotkeyConfig,
     pub settings: AppSettingsConfig,
+    pub personas: persona::PersonaConfig,
 }
 
 impl Default for AppConfig {
@@ -20,6 +23,7 @@ impl Default for AppConfig {
             schema_version: CONFIG_SCHEMA_VERSION,
             hotkeys: HotkeyConfig::default(),
             settings: AppSettingsConfig::default(),
+            personas: persona::PersonaConfig::default(),
         }
     }
 }
@@ -76,6 +80,7 @@ pub enum ConfigError {
     },
     DuplicateHotkeys(String),
     InvalidSettings(String),
+    InvalidPersonas(String),
     Path(String),
 }
 
@@ -94,6 +99,7 @@ impl std::fmt::Display for ConfigError {
                 )
             }
             Self::InvalidSettings(message) => write!(formatter, "invalid app settings: {message}"),
+            Self::InvalidPersonas(message) => write!(formatter, "invalid personas: {message}"),
             Self::Path(message) => write!(formatter, "config path error: {message}"),
         }
     }
@@ -105,7 +111,7 @@ pub fn setup(app: &tauri::AppHandle) -> tauri::Result<()> {
     let config = load_or_create(app).map_err(to_tauri_error)?;
     let path = config_path(app).map_err(to_tauri_error)?;
     println!(
-        "[config] app config ready at {}; Safe Mode={}, Magic Mode={}, Base URL={}, Model={}",
+        "[config] app config ready at {}; Safe Mode={}, Magic Mode={}, Base URL={}, Model={}, Default Persona={}",
         path.display(),
         config.hotkeys.safe_mode,
         config.hotkeys.magic_mode,
@@ -114,7 +120,8 @@ pub fn setup(app: &tauri::AppHandle) -> tauri::Result<()> {
             "<mock>"
         } else {
             &config.settings.model
-        }
+        },
+        config.personas.default_safe_persona_id
     );
     Ok(())
 }
@@ -129,7 +136,14 @@ pub fn load_or_create(app: &tauri::AppHandle) -> Result<AppConfig, ConfigError> 
     }
 
     match load_app_config_at(&path) {
-        Ok(config) => Ok(config),
+        Ok(mut config) => {
+            let normalized_personas = persona::normalize_config(&config.personas);
+            if normalized_personas != config.personas {
+                config.personas = normalized_personas;
+                save_app_config_at(&path, &config)?;
+            }
+            Ok(config)
+        }
         Err(error) => {
             println!("[config] failed to read config; rewriting defaults: {error}");
             let config = AppConfig::default();
@@ -160,6 +174,17 @@ pub fn save_settings(
     config.settings = settings;
     save_app_config_at(&config_path(app)?, &config)?;
     Ok(config.settings)
+}
+
+pub fn save_personas(
+    app: &tauri::AppHandle,
+    personas: persona::PersonaConfig,
+) -> Result<persona::PersonaConfig, ConfigError> {
+    let personas = normalized_personas(&personas)?;
+    let mut config = load_or_create(app)?;
+    config.personas = personas;
+    save_app_config_at(&config_path(app)?, &config)?;
+    Ok(config.personas)
 }
 
 impl HotkeyConfig {
@@ -202,6 +227,20 @@ impl AppSettingsConfig {
     }
 }
 
+fn normalized_personas(
+    personas: &persona::PersonaConfig,
+) -> Result<persona::PersonaConfig, ConfigError> {
+    let normalized = persona::normalize_config(personas);
+
+    if normalized.items.is_empty() {
+        return Err(ConfigError::InvalidPersonas(
+            "at least one enabled persona is required".to_string(),
+        ));
+    }
+
+    Ok(normalized)
+}
+
 pub fn default_hotkeys() -> HotkeyConfig {
     HotkeyConfig::default()
 }
@@ -232,7 +271,10 @@ fn save_app_config_at(path: &PathBuf, config: &AppConfig) -> Result<(), ConfigEr
         })?;
     }
 
-    let contents = serde_json::to_string_pretty(config)
+    let mut config = config.clone();
+    config.personas = persona::normalize_config(&config.personas);
+
+    let contents = serde_json::to_string_pretty(&config)
         .map_err(|error| ConfigError::Json(format!("failed to serialize config: {error}")))?;
     fs::write(path, format!("{contents}\n"))
         .map_err(|error| ConfigError::Io(format!("failed to write {}: {error}", path.display())))

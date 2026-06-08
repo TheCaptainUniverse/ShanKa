@@ -1,5 +1,5 @@
 use crate::{
-    clipboard, hud,
+    clipboard, config, hud, persona,
     rewrite::{self, RewriteError},
     selection::{self, SelectionError, SelectionMode},
 };
@@ -191,7 +191,14 @@ pub fn dismiss_safe_preview(app: &tauri::AppHandle, preview_id: Option<u64>) {
 }
 
 fn run_safe_preview(app: &tauri::AppHandle) -> Result<PipelineOutcome, PipelineError> {
-    let persona_id = rewrite::default_safe_persona_id().to_string();
+    let persona_id = config::load_or_create(app)
+        .map(|config| persona::normalize_config(&config.personas).default_safe_persona_id)
+        .unwrap_or_else(|error| {
+            println!(
+                "[pipeline] failed to load persona config; using built-in default persona: {error}"
+            );
+            rewrite::default_safe_persona_id().to_string()
+        });
     let selection = capture_and_rewrite(app, SelectionMode::Safe, Some(&persona_id))?;
     let preview_id = next_safe_preview_id();
     replace_safe_preview_state(SafePreview {

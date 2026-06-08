@@ -1,12 +1,7 @@
-use crate::{config, selection::SelectionMode};
+use crate::{config, persona, selection::SelectionMode};
 use reqwest::header;
 use serde::{Deserialize, Serialize};
-use std::{
-    sync::OnceLock,
-    time::{Duration, Instant},
-};
-
-const PERSONA_CATALOG_JSON: &str = include_str!("../../../shared/personas.json");
+use std::time::{Duration, Instant};
 
 pub trait RewriteProvider {
     fn name(&self) -> &'static str;
@@ -16,32 +11,8 @@ pub trait RewriteProvider {
 pub struct RewriteRequest<'a> {
     pub text: &'a str,
     pub mode: SelectionMode,
-    pub persona: Option<RewritePersona>,
+    pub persona: Option<persona::ResolvedPersona>,
 }
-
-#[derive(Debug, Clone)]
-pub struct RewritePersona {
-    pub name: String,
-    pub system_prompt: String,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct PersonaCatalog {
-    default_safe_persona_id: String,
-    personas: Vec<PersonaDefinition>,
-}
-
-#[derive(Debug, Clone, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct PersonaDefinition {
-    id: String,
-    name: String,
-    system_prompt: String,
-    enabled: bool,
-}
-
-static PERSONA_CATALOG: OnceLock<PersonaCatalog> = OnceLock::new();
 
 #[derive(Debug)]
 pub struct RewriteResponse {
@@ -208,12 +179,14 @@ pub fn rewrite_selected_text_with_persona(
     text: &str,
     persona_id: Option<&str>,
 ) -> Result<RewriteResponse, RewriteError> {
-    let settings = config::load_or_create(app)
-        .map_err(|error| RewriteError::Config(error.to_string()))?
+    let config =
+        config::load_or_create(app).map_err(|error| RewriteError::Config(error.to_string()))?;
+    let settings = config
         .settings
         .normalized()
         .map_err(|error| RewriteError::Config(error.to_string()))?;
-    let persona = persona_id.map(resolve_persona);
+    let persona = persona_id
+        .and_then(|persona_id| persona::resolve_persona(&config.personas, Some(persona_id)));
 
     if settings.can_use_remote_provider() {
         let provider = OpenAiCompatibleRewriteProvider { settings };
@@ -233,45 +206,7 @@ pub fn rewrite_selected_text_with_persona(
 }
 
 pub fn default_safe_persona_id() -> &'static str {
-    persona_catalog().default_safe_persona_id.as_str()
-}
-
-fn resolve_persona(persona_id: &str) -> RewritePersona {
-    let catalog = persona_catalog();
-    catalog
-        .personas
-        .iter()
-        .filter(|persona| persona.enabled)
-        .find(|persona| persona.id == persona_id)
-        .or_else(|| {
-            catalog
-                .personas
-                .iter()
-                .filter(|persona| persona.enabled)
-                .find(|persona| persona.id == catalog.default_safe_persona_id)
-        })
-        .or_else(|| catalog.personas.iter().find(|persona| persona.enabled))
-        .map(rewrite_persona_from_definition)
-        .unwrap_or_else(|| RewritePersona {
-            name: "Clean Correction".to_string(),
-            system_prompt:
-                "Correct typos, punctuation, and formatting without changing the author's voice."
-                    .to_string(),
-        })
-}
-
-fn persona_catalog() -> &'static PersonaCatalog {
-    PERSONA_CATALOG.get_or_init(|| {
-        serde_json::from_str(PERSONA_CATALOG_JSON)
-            .expect("shared/personas.json must be valid persona catalog JSON")
-    })
-}
-
-fn rewrite_persona_from_definition(persona: &PersonaDefinition) -> RewritePersona {
-    RewritePersona {
-        name: persona.name.clone(),
-        system_prompt: persona.system_prompt.clone(),
-    }
+    persona::default_safe_persona_id()
 }
 
 fn normalize_text(text: &str) -> String {
@@ -287,7 +222,7 @@ fn normalize_text(text: &str) -> String {
 async fn call_chat_completion_with_json_fallback(
     settings: &config::AppSettingsConfig,
     mode: SelectionMode,
-    persona: Option<RewritePersona>,
+    persona: Option<persona::ResolvedPersona>,
     text: &str,
 ) -> Result<String, RewriteError> {
     match call_chat_completion(settings, mode, persona.clone(), text, OutputMode::Json).await {
@@ -309,7 +244,7 @@ async fn call_chat_completion_with_json_fallback(
 async fn call_chat_completion(
     settings: &config::AppSettingsConfig,
     mode: SelectionMode,
-    persona: Option<RewritePersona>,
+    persona: Option<persona::ResolvedPersona>,
     text: &str,
     output_mode: OutputMode,
 ) -> Result<String, ProviderCallError> {
@@ -476,7 +411,7 @@ fn response_body_sample(body: &[u8]) -> String {
 
 fn rewrite_messages(
     mode: SelectionMode,
-    persona: Option<RewritePersona>,
+    persona: Option<persona::ResolvedPersona>,
     text: &str,
     output_mode: OutputMode,
 ) -> Vec<ChatMessage> {

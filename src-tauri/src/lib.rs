@@ -4,6 +4,7 @@ mod config;
 mod hotkey;
 mod hud;
 mod input;
+mod persona;
 mod pipeline;
 mod platform;
 mod rewrite;
@@ -36,6 +37,13 @@ fn get_app_settings(app: tauri::AppHandle) -> Result<config::AppSettingsConfig, 
 }
 
 #[tauri::command]
+fn get_persona_config(app: tauri::AppHandle) -> Result<persona::PersonaConfig, String> {
+    config::load_or_create(&app)
+        .map(|config| persona::normalize_config(&config.personas))
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
 fn save_hotkey_config(
     app: tauri::AppHandle,
     hotkeys: config::HotkeyConfig,
@@ -51,6 +59,14 @@ fn save_app_settings(
     settings: config::AppSettingsConfig,
 ) -> Result<config::AppSettingsConfig, String> {
     config::save_settings(&app, settings).map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+fn save_persona_config(
+    app: tauri::AppHandle,
+    personas: persona::PersonaConfig,
+) -> Result<persona::PersonaConfig, String> {
+    config::save_personas(&app, personas).map_err(|error| error.to_string())
 }
 
 #[tauri::command]
@@ -107,8 +123,10 @@ pub fn run() {
             get_hud_state,
             get_app_settings,
             get_hotkey_config,
+            get_persona_config,
             save_app_settings,
             save_hotkey_config,
+            save_persona_config,
             set_hotkey_recording_active,
             copy_safe_preview,
             replace_safe_preview,
