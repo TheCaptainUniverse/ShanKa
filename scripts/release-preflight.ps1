@@ -37,6 +37,7 @@ Invoke-Step -Name "quality gate" -Command @("bun", "run", "check")
 Invoke-Step -Name "Tauri bundles" -Command @("bun", "run", "tauri", "build")
 Invoke-Step -Name "release executable smoke" -Command @("bun", "run", "release:smoke")
 Invoke-Step -Name "NSIS installer smoke" -Command @("bun", "run", "release:install-smoke")
+Invoke-Step -Name "MSI package smoke" -Command @("bun", "run", "release:msi-smoke")
 Invoke-Step -Name "release manifest" -Command @("bun", "run", "release:manifest")
 
 Write-Host "[release-preflight] all checks completed"
