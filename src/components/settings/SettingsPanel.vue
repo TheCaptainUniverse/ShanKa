@@ -24,7 +24,7 @@ import { useTheme } from "@/theme/useTheme";
 import type { Theme } from "@/theme/useTheme";
 import { BUILT_IN_PERSONAS, DEFAULT_SAFE_PERSONA_ID, type PersonaConfig, type PersonaDefinition } from "@shared";
 
-type SettingsTab = "general" | "personas" | "hotkeys";
+type SettingsTab = "general" | "personas" | "history" | "hotkeys";
 type HotkeyField = "safe_mode" | "magic_mode";
 type HotkeyConfig = {
   safe_mode: string;
@@ -39,6 +39,7 @@ type AppSettingsConfig = {
   model: string;
   timeout_ms: number;
   debug_logging: boolean;
+  history_enabled: boolean;
 };
 type AppSettingsStatus = "idle" | "saved" | "error";
 type ProviderTestStatus = "idle" | "success" | "error";
@@ -57,6 +58,16 @@ type PlatformStatus = {
   notes: string[];
   settingsActionAvailable: boolean;
 };
+type RewriteHistoryItem = {
+  id: number;
+  mode: "safe" | "magic" | string;
+  originalText: string;
+  resultText: string;
+  personaId?: string | null;
+  action: "copied" | "replaced" | "saved_to_clipboard" | string;
+  replaced: boolean;
+  createdAtMs: number;
+};
 type PersonaDraftMode = "create" | "edit";
 type PersonaDraft = {
   mode: PersonaDraftMode;
@@ -70,6 +81,7 @@ const { setTheme, theme, themes } = useTheme();
 const navItems = [
   { id: "general", label: "settings.nav.general" },
   { id: "personas", label: "settings.nav.personas" },
+  { id: "history", label: "settings.nav.history" },
   { id: "hotkeys", label: "settings.nav.hotkeys" },
 ] as const satisfies readonly { id: SettingsTab; label: TranslationKey }[];
 
@@ -109,6 +121,7 @@ const appSettings = ref<AppSettingsConfig>({
   model: "",
   timeout_ms: 8000,
   debug_logging: false,
+  history_enabled: true,
 });
 const settingsLoading = ref(false);
 const settingsSaving = ref(false);
@@ -141,6 +154,10 @@ const personasDirty = ref(false);
 const personaStatus = ref<PersonaStatus>("idle");
 const personaErrorKey = ref<TranslationKey | null>(null);
 const personaDraft = ref<PersonaDraft | null>(null);
+const historyItems = ref<RewriteHistoryItem[]>([]);
+const historyLoading = ref(false);
+const historyStatus = ref<"idle" | "copied" | "cleared" | "error">("idle");
+const historyErrorKey = ref<TranslationKey | null>(null);
 
 const localeLabels = computed<Record<Locale, string>>(() => ({
   "zh-CN": t("settings.locale.zh"),
@@ -157,6 +174,7 @@ const platformErrorMessage = computed(() => (platformErrorKey.value ? t(platform
 const providerTestErrorMessage = computed(() => (providerTestErrorKey.value ? t(providerTestErrorKey.value) : ""));
 const hotkeyErrorMessage = computed(() => (hotkeyErrorKey.value ? t(hotkeyErrorKey.value) : ""));
 const personaErrorMessage = computed(() => (personaErrorKey.value ? t(personaErrorKey.value) : ""));
+const historyErrorMessage = computed(() => (historyErrorKey.value ? t(historyErrorKey.value) : ""));
 const enabledPersonaCount = computed(() => personaConfig.value.items.filter((persona) => persona.enabled).length);
 const canSavePersonas = computed(() => !personasLoading.value && !personasSaving.value && personasDirty.value);
 const canSubmitPersonaDraft = computed(() => {
@@ -193,6 +211,7 @@ onMounted(() => {
   void loadHotkeys();
   void loadPersonas();
   void loadPlatformStatus();
+  void loadHistory();
 });
 
 onUnmounted(() => {
@@ -278,6 +297,22 @@ async function loadPersonas() {
   }
 }
 
+async function loadHistory() {
+  historyLoading.value = true;
+  historyErrorKey.value = null;
+
+  try {
+    historyItems.value = await invoke<RewriteHistoryItem[]>("get_rewrite_history");
+    historyStatus.value = "idle";
+  } catch (error) {
+    console.warn("[settings] failed to load rewrite history", error);
+    historyStatus.value = "error";
+    historyErrorKey.value = "settings.history.loadFailed";
+  } finally {
+    historyLoading.value = false;
+  }
+}
+
 async function saveAppSettings() {
   if (!canSaveSettings.value) {
     return;
@@ -353,6 +388,33 @@ async function savePersonas() {
   }
 }
 
+async function copyHistoryResult(historyId: number) {
+  historyErrorKey.value = null;
+
+  try {
+    await invoke("copy_history_result", { historyId });
+    historyStatus.value = "copied";
+  } catch (error) {
+    console.warn("[settings] failed to copy rewrite history result", error);
+    historyStatus.value = "error";
+    historyErrorKey.value = "settings.history.copyFailed";
+  }
+}
+
+async function clearHistory() {
+  historyErrorKey.value = null;
+
+  try {
+    await invoke("clear_rewrite_history");
+    historyItems.value = [];
+    historyStatus.value = "cleared";
+  } catch (error) {
+    console.warn("[settings] failed to clear rewrite history", error);
+    historyStatus.value = "error";
+    historyErrorKey.value = "settings.history.clearFailed";
+  }
+}
+
 async function saveHotkeys() {
   if (!canSaveHotkeys.value) {
     return;
@@ -413,6 +475,7 @@ function appSettingsPayload(): AppSettingsConfig {
     model: appSettings.value.model.trim(),
     timeout_ms: Math.round(appSettings.value.timeout_ms),
     debug_logging: appSettings.value.debug_logging,
+    history_enabled: appSettings.value.history_enabled,
   };
 }
 
@@ -742,6 +805,32 @@ function platformStatusClass(status: PlatformCapability["status"]) {
     default:
       return "text-shanka-muted";
   }
+}
+
+function historyModeLabel(mode: RewriteHistoryItem["mode"]) {
+  return mode === "magic" ? t("settings.history.mode.magic") : t("settings.history.mode.safe");
+}
+
+function historyActionLabel(action: RewriteHistoryItem["action"]) {
+  switch (action) {
+    case "replaced":
+      return t("settings.history.action.replaced");
+    case "copied":
+      return t("settings.history.action.copied");
+    case "saved_to_clipboard":
+      return t("settings.history.action.savedToClipboard");
+    default:
+      return t("settings.history.action.saved");
+  }
+}
+
+function historyTimestamp(createdAtMs: number) {
+  return new Intl.DateTimeFormat(locale.value, {
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(new Date(createdAtMs));
 }
 
 function sanitizedPersonaConfig(): PersonaConfig {
@@ -1105,6 +1194,20 @@ function personaDescription(persona: PersonaDefinition) {
             />
           </label>
 
+          <label class="flex items-center justify-between gap-4 rounded-md border border-shanka-border px-3 py-2">
+            <span>
+              <span class="block text-sm text-shanka-secondary">{{ t("settings.field.historyEnabled") }}</span>
+              <span class="mt-1 block text-xs text-shanka-muted">{{ t("settings.general.historyHint") }}</span>
+            </span>
+            <input
+              v-model="appSettings.history_enabled"
+              class="size-4 accent-shanka-primary"
+              :disabled="settingsLoading"
+              type="checkbox"
+              @change="markSettingsDirty"
+            />
+          </label>
+
           <div class="flex flex-wrap items-center justify-between gap-3 rounded-md border border-shanka-border px-3 py-2">
             <p v-if="providerTesting" class="text-xs text-shanka-muted">
               {{ t("settings.providerTest.testing") }}
@@ -1348,6 +1451,85 @@ function personaDescription(persona: PersonaDefinition) {
               <Save class="size-4" aria-hidden="true" />
               <span>{{ personasSaving ? t("settings.personas.saving") : t("settings.personas.save") }}</span>
             </button>
+          </div>
+        </div>
+
+        <div v-else-if="selectedTab === 'history'" class="mt-6 space-y-4">
+          <div class="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <div class="text-sm text-shanka-secondary">{{ t("settings.history.title") }}</div>
+              <p class="mt-1 text-xs text-shanka-muted">{{ t("settings.history.hint") }}</p>
+            </div>
+            <div class="flex items-center gap-1">
+              <button
+                class="inline-flex size-8 items-center justify-center rounded-md text-shanka-muted transition hover:bg-shanka-hover/5 hover:text-shanka-primary disabled:cursor-not-allowed disabled:opacity-50"
+                :title="t('settings.history.refresh')"
+                :aria-label="t('settings.history.refresh')"
+                :disabled="historyLoading"
+                type="button"
+                @click="loadHistory"
+              >
+                <RefreshCw class="size-4" :class="historyLoading ? 'animate-spin' : ''" aria-hidden="true" />
+              </button>
+              <button
+                class="inline-flex size-8 items-center justify-center rounded-md text-shanka-muted transition hover:bg-shanka-hover/5 hover:text-shanka-danger disabled:cursor-not-allowed disabled:opacity-50"
+                :title="t('settings.history.clear')"
+                :aria-label="t('settings.history.clear')"
+                :disabled="historyLoading || historyItems.length === 0"
+                type="button"
+                @click="clearHistory"
+              >
+                <Trash2 class="size-4" aria-hidden="true" />
+              </button>
+            </div>
+          </div>
+
+          <p v-if="historyLoading" class="text-xs text-shanka-muted">
+            {{ t("settings.history.loading") }}
+          </p>
+          <p v-else-if="historyStatus === 'error'" class="text-xs text-red-500 dark:text-red-400">
+            {{ historyErrorMessage }}
+          </p>
+          <p v-else-if="historyStatus === 'copied'" class="text-xs text-shanka-success">
+            {{ t("settings.history.copied") }}
+          </p>
+          <p v-else-if="historyStatus === 'cleared'" class="text-xs text-shanka-success">
+            {{ t("settings.history.cleared") }}
+          </p>
+
+          <div v-if="!historyLoading && historyItems.length === 0" class="rounded-md border border-shanka-border px-3 py-6 text-center text-xs text-shanka-muted">
+            {{ t("settings.history.empty") }}
+          </div>
+
+          <div v-else class="divide-y divide-shanka-border rounded-md border border-shanka-border">
+            <div v-for="item in historyItems" :key="item.id" class="px-3 py-3">
+              <div class="flex items-start justify-between gap-3">
+                <div class="min-w-0">
+                  <div class="flex flex-wrap items-center gap-2 text-xs">
+                    <span class="rounded border border-shanka-border px-1.5 py-0.5 text-shanka-primary">
+                      {{ historyModeLabel(item.mode) }}
+                    </span>
+                    <span class="text-shanka-muted">{{ historyActionLabel(item.action) }}</span>
+                    <span class="text-shanka-muted">{{ historyTimestamp(item.createdAtMs) }}</span>
+                  </div>
+                  <p class="mt-2 line-clamp-2 text-xs text-shanka-muted">
+                    {{ item.originalText }}
+                  </p>
+                  <p class="mt-2 line-clamp-3 whitespace-pre-wrap text-sm text-shanka-secondary">
+                    {{ item.resultText }}
+                  </p>
+                </div>
+                <button
+                  class="inline-flex size-8 shrink-0 items-center justify-center rounded-md text-shanka-muted transition hover:bg-shanka-hover/5 hover:text-shanka-primary"
+                  :title="t('settings.history.copyResult')"
+                  :aria-label="t('settings.history.copyResult')"
+                  type="button"
+                  @click="copyHistoryResult(item.id)"
+                >
+                  <Copy class="size-4" aria-hidden="true" />
+                </button>
+              </div>
+            </div>
           </div>
         </div>
 

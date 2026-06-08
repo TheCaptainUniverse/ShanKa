@@ -66,6 +66,7 @@ pub struct AppSettingsConfig {
     pub model: String,
     pub timeout_ms: u64,
     pub debug_logging: bool,
+    pub history_enabled: bool,
 }
 
 impl Default for AppSettingsConfig {
@@ -78,6 +79,7 @@ impl Default for AppSettingsConfig {
             model: String::new(),
             timeout_ms: 8_000,
             debug_logging: false,
+            history_enabled: true,
         }
     }
 }
@@ -257,6 +259,7 @@ impl AppSettingsConfig {
             model: self.model.trim().to_string(),
             timeout_ms: self.timeout_ms.clamp(1_000, 120_000),
             debug_logging: self.debug_logging,
+            history_enabled: self.history_enabled,
         })
     }
 

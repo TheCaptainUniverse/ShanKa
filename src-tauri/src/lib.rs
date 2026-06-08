@@ -1,6 +1,7 @@
 mod bridge;
 mod clipboard;
 mod config;
+mod history;
 mod hotkey;
 mod hud;
 mod input;
@@ -50,6 +51,25 @@ fn get_platform_status() -> platform::PlatformStatus {
 #[tauri::command]
 fn open_platform_permission_settings() -> Result<(), String> {
     platform::open_permission_settings()
+}
+
+#[tauri::command]
+fn get_rewrite_history(app: tauri::AppHandle) -> Result<Vec<history::RewriteHistoryItem>, String> {
+    history::load(&app)
+}
+
+#[tauri::command]
+fn clear_rewrite_history(app: tauri::AppHandle) -> Result<(), String> {
+    history::clear(&app)
+}
+
+#[tauri::command]
+fn copy_history_result(app: tauri::AppHandle, history_id: u64) -> Result<(), String> {
+    let item = history::load(&app)?
+        .into_iter()
+        .find(|item| item.id == history_id)
+        .ok_or_else(|| "history item is no longer available".to_string())?;
+    clipboard::copy_text_to_clipboard(&item.result_text).map_err(|error| error.to_string())
 }
 
 #[tauri::command]
@@ -132,6 +152,7 @@ pub fn run() {
             window::setup(handle)?;
             tray::setup(handle)?;
             config::setup(handle)?;
+            history::setup(handle)?;
             clipboard::setup(handle)?;
             input::setup(handle)?;
             selection::setup(handle)?;
@@ -147,7 +168,10 @@ pub fn run() {
             get_hotkey_config,
             get_persona_config,
             get_platform_status,
+            get_rewrite_history,
             open_platform_permission_settings,
+            clear_rewrite_history,
+            copy_history_result,
             save_app_settings,
             test_provider_connection,
             save_hotkey_config,

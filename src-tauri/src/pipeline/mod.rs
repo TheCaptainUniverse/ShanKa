@@ -1,5 +1,5 @@
 use crate::{
-    clipboard, config, hud, persona,
+    clipboard, config, history, hud, persona,
     rewrite::{self, RewriteError},
     selection::{self, SelectionError, SelectionMode},
 };
@@ -103,8 +103,19 @@ pub fn copy_safe_preview(
     edited_text: Option<String>,
 ) -> Result<(), PipelineError> {
     let preview = current_safe_preview(preview_id).map_err(PipelineError::Replacement)?;
-    let replacement_text = edited_text.unwrap_or(preview.replacement_text);
+    let replacement_text = edited_text.unwrap_or_else(|| preview.replacement_text.clone());
     clipboard::copy_text_to_clipboard(&replacement_text).map_err(PipelineError::Replacement)?;
+    record_history(
+        app,
+        history::RewriteHistoryRecord {
+            mode: "safe",
+            original_text: &preview.original_text,
+            result_text: &replacement_text,
+            persona_id: Some(&preview.persona_id),
+            action: "copied",
+            replaced: false,
+        },
+    );
     hud::saved_to_clipboard(app);
     println!(
         "[pipeline] Safe Mode preview {} copied {} characters",
@@ -120,7 +131,7 @@ pub fn replace_safe_preview(
     edited_text: Option<String>,
 ) -> Result<(), PipelineError> {
     let preview = current_safe_preview(preview_id).map_err(PipelineError::Replacement)?;
-    let replacement_text = edited_text.unwrap_or(preview.replacement_text);
+    let replacement_text = edited_text.unwrap_or_else(|| preview.replacement_text.clone());
     crate::window::hide_hud(app);
     crate::platform::restore_preview_target_window();
     let replaced = replace_or_save_to_clipboard(app, &replacement_text)?;
@@ -138,6 +149,21 @@ pub fn replace_safe_preview(
             replacement_text.chars().count()
         );
     }
+    record_history(
+        app,
+        history::RewriteHistoryRecord {
+            mode: "safe",
+            original_text: &preview.original_text,
+            result_text: &replacement_text,
+            persona_id: Some(&preview.persona_id),
+            action: if replaced {
+                "replaced"
+            } else {
+                "saved_to_clipboard"
+            },
+            replaced,
+        },
+    );
     Ok(())
 }
 
@@ -269,8 +295,29 @@ fn run_magic_replacement(app: &tauri::AppHandle) -> Result<PipelineOutcome, Pipe
             selection.replacement_text.chars().count()
         );
     }
+    record_history(
+        app,
+        history::RewriteHistoryRecord {
+            mode: "magic",
+            original_text: &selection.original_text,
+            result_text: &selection.replacement_text,
+            persona_id: None,
+            action: if replaced {
+                "replaced"
+            } else {
+                "saved_to_clipboard"
+            },
+            replaced,
+        },
+    );
 
     Ok(selection.into_outcome(Duration::ZERO))
+}
+
+fn record_history(app: &tauri::AppHandle, record: history::RewriteHistoryRecord<'_>) {
+    if let Err(error) = history::record(app, record) {
+        println!("[history] failed to record rewrite history: {error}");
+    }
 }
 
 fn replace_or_save_to_clipboard(
