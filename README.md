@@ -39,6 +39,7 @@ Build Windows packages with:
 bun run tauri build
 bun run release:smoke
 bun run release:install-smoke
+bun run release:msi-smoke
 bun run release:manifest
 ```
 
@@ -69,7 +70,14 @@ bun run release:manual-text-test
 ```
 
 It starts Shanka with mock rewrite settings, opens a Notepad fixture and browser
-fixture, and prints the hotkeys to use for the Windows text-link checklist.
+fixture, prints the hotkeys to use for the Windows text-link checklist, and
+creates a prefilled report under `docs/release/manual/`.
+
+Use `-OpenReport` when you want the generated report opened automatically:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts\release-manual-text-test.ps1 -OpenReport
+```
 
 ## Development
 
@@ -98,6 +106,7 @@ bun run check
 bun run tauri build
 bun run release:smoke
 bun run release:install-smoke
+bun run release:msi-smoke
 bun run release:manifest
 ```
 

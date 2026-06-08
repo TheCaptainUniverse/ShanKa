@@ -1,9 +1,11 @@
 param(
   [string] $ConfigDir = "",
   [string] $ReleaseExe = "",
+  [string] $ReportPath = "",
   [switch] $ReuseConfig,
   [switch] $Wait,
-  [switch] $SmokeOnly
+  [switch] $SmokeOnly,
+  [switch] $OpenReport
 )
 
 $ErrorActionPreference = "Stop"
@@ -15,6 +17,7 @@ $tempRoot = Join-Path ([System.IO.Path]::GetTempPath()) "ShankaManualTextTest"
 $defaultConfigDir = Join-Path $tempRoot "config"
 $notepadTextPath = Join-Path $tempRoot "notepad-multiline.txt"
 $browserTextPath = Join-Path $tempRoot "browser-readonly.html"
+$manualReportDir = Join-Path $repoRoot "docs\release\manual"
 
 function Get-FullPath {
   param([Parameter(Mandatory = $true)][string] $Path)
@@ -123,6 +126,146 @@ Tableau
   [System.IO.File]::WriteAllText($browserTextPath, "$browserHtml`n", $utf8NoBom)
 }
 
+function Get-GitValue {
+  param([Parameter(Mandatory = $true)][string[]] $Arguments)
+
+  Push-Location -LiteralPath $repoRoot
+  try {
+    $output = & git @Arguments 2>$null
+    if ($LASTEXITCODE -ne 0) {
+      return ""
+    }
+
+    return ([string] $output).Trim()
+  }
+  finally {
+    Pop-Location
+  }
+}
+
+function Get-PackageVersion {
+  $packageJsonPath = Join-Path $repoRoot "package.json"
+  if (-not (Test-Path -LiteralPath $packageJsonPath -PathType Leaf)) {
+    return ""
+  }
+
+  $packageJson = Get-Content -LiteralPath $packageJsonPath -Raw | ConvertFrom-Json
+  return [string] $packageJson.version
+}
+
+function Get-DefaultReportPath {
+  if ($SmokeOnly) {
+    return Join-Path $tempRoot "manual-text-test-smoke-report.md"
+  }
+
+  $version = Get-PackageVersion
+  if ([string]::IsNullOrWhiteSpace($version)) {
+    $version = "unknown"
+  }
+
+  $commit = Get-GitValue -Arguments @("rev-parse", "--short", "HEAD")
+  if ([string]::IsNullOrWhiteSpace($commit)) {
+    $commit = "nogit"
+  }
+
+  $timestamp = Get-Date -Format "yyyyMMdd-HHmmss"
+  return Join-Path $manualReportDir "Shanka_$($version)_$($commit)_windows-text_$timestamp.md"
+}
+
+function Write-ManualReport {
+  param(
+    [Parameter(Mandatory = $true)][string] $Path,
+    [Parameter(Mandatory = $true)][string] $ConfigDirectory,
+    [Parameter(Mandatory = $true)][string] $ExecutablePath
+  )
+
+  New-Item -ItemType Directory -Force -Path (Split-Path -Parent $Path) | Out-Null
+
+  $fullCommit = Get-GitValue -Arguments @("rev-parse", "HEAD")
+  $shortCommit = Get-GitValue -Arguments @("rev-parse", "--short", "HEAD")
+  $version = Get-PackageVersion
+  $createdAt = Get-Date -Format "yyyy-MM-dd HH:mm:ss zzz"
+
+  $lines = [System.Collections.Generic.List[string]]::new()
+  $lines.Add("# Shanka Windows Manual Text Test Report")
+  $lines.Add("")
+  $lines.Add("| Field | Value |")
+  $lines.Add("| --- | --- |")
+  $lines.Add("| Created At | $createdAt |")
+  $lines.Add("| Git Commit | $fullCommit |")
+  $lines.Add("| Short Commit | $shortCommit |")
+  $lines.Add("| App Version | $version |")
+  $lines.Add("| Release Exe | ``$ExecutablePath`` |")
+  $lines.Add("| Config Dir | ``$ConfigDirectory`` |")
+  $lines.Add("| Notepad Fixture | ``$notepadTextPath`` |")
+  $lines.Add("| Browser Fixture | ``$browserTextPath`` |")
+  $lines.Add("| Safe Mode Hotkey | ``Ctrl+Alt+Shift+S`` |")
+  $lines.Add("| Magic Mode Hotkey | ``Ctrl+Alt+Shift+M`` |")
+  $lines.Add("| Provider | mock rewrite / DeepSeek / OpenAI / OpenRouter / Other |")
+  $lines.Add("| Overall Result | Pass / Blocked / Needs Fix |")
+  $lines.Add("")
+  $lines.Add("## How To Run")
+  $lines.Add("")
+  $lines.Add('```powershell')
+  $lines.Add("bun run release:manual-text-test")
+  $lines.Add('```')
+  $lines.Add("")
+  $lines.Add("Use the fixtures opened by the launcher. Record exact failures, target app, selected text shape, and whether the clipboard was restored.")
+  $lines.Add("")
+  $lines.Add("## Core Text Link Results")
+  $lines.Add("")
+  $lines.Add("| ID | Target | Scenario | Expected | Result | Notes |")
+  $lines.Add("| --- | --- | --- | --- | --- | --- |")
+  $lines.Add("| WIN-CORE-01 | Notepad | Safe Preview on single-line Chinese text | Preview card appears near cursor; copy, replace, regenerate work. |  |  |")
+  $lines.Add("| WIN-CORE-02 | Notepad | Magic Replace on multi-line Chinese text | Selected text is replaced; history and undo affordance remain available. |  |  |")
+  $lines.Add("| WIN-CORE-03 | Browser input | Safe Preview, edit result, replace | Replacement uses edited preview text. |  |  |")
+  $lines.Add("| WIN-CORE-04 | Browser read-only paragraph | Safe copy | Result is copied without mutating page content. |  |  |")
+  $lines.Add("| WIN-CORE-05 | Notepad++ | Safe and Magic on multi-line list | Clipboard capture stays stable without app-specific adapter. |  |  |")
+  $lines.Add("| WIN-CORE-06 | Office/WPS | Safe Replace on paragraph | Replaces if allowed; otherwise keeps result on clipboard with clear HUD state. |  |  |")
+  $lines.Add("| WIN-CORE-07 | Elevated target | Magic Replace from non-elevated Shanka | Paste blocked path preserves result on clipboard. |  |  |")
+  $lines.Add("| WIN-CORE-08 | No selection | Safe and Magic without selected text | Localized error; no model call; clipboard is not polluted. |  |  |")
+  $lines.Add("")
+  $lines.Add("## Safe Preview Results")
+  $lines.Add("")
+  $lines.Add("| ID | Scenario | Expected | Result | Notes |")
+  $lines.Add("| --- | --- | --- | --- | --- |")
+  $lines.Add("| SAFE-01 | Loading state | Spinner appears until rewrite completes; no stale ready state. |  |  |")
+  $lines.Add("| SAFE-02 | Copy | Copies edited result and shows success feedback. |  |  |")
+  $lines.Add("| SAFE-03 | Replace | Replaces selection and closes after completion feedback. |  |  |")
+  $lines.Add("| SAFE-04 | Regenerate | Keeps preview card; updates result on success; preserves old result on failure. |  |  |")
+  $lines.Add("| SAFE-05 | Temporary persona switch | Regenerates with selected persona without changing global default. |  |  |")
+  $lines.Add("| SAFE-06 | Blur close | Clicking outside or pressing Escape closes preview; stale requests do not reopen it. |  |  |")
+  $lines.Add("| SAFE-07 | Long text | Preview scrolls; controls remain stable; text does not overflow. |  |  |")
+  $lines.Add("")
+  $lines.Add("## Provider And Error Results")
+  $lines.Add("")
+  $lines.Add("| ID | Scenario | Expected | Result | Notes |")
+  $lines.Add("| --- | --- | --- | --- | --- |")
+  $lines.Add("| CFG-01 | Provider preset | Preset updates Base URL, model, JSON mode policy. |  |  |")
+  $lines.Add("| CFG-02 | Connection test success | Localized success message. |  |  |")
+  $lines.Add("| CFG-03 | Connection test failure | Friendly localized error; no full API key. |  |  |")
+  $lines.Add("| CFG-04 | Keychain save | Config file stores key reference, not plaintext key. |  |  |")
+  $lines.Add("| CFG-05 | Privacy logging default | Logs contain length, duration, error code, not full selected text. |  |  |")
+  $lines.Add("| CFG-06 | Debug logging | Useful diagnostics; API key remains masked. |  |  |")
+  $lines.Add("| CFG-07 | Hotkey recording | Recording current hotkeys does not trigger Safe/Magic flows. |  |  |")
+  $lines.Add("| CFG-08 | Hotkey validation | Invalid/duplicate shortcuts show localized friendly messages. |  |  |")
+  $lines.Add("")
+  $lines.Add("## Blocking Issues")
+  $lines.Add("")
+  $lines.Add("| ID | Severity | Platform | Scenario | Symptom | Repro Steps | Status |")
+  $lines.Add("| --- | --- | --- | --- | --- | --- | --- |")
+  $lines.Add("|  |  | Windows |  |  |  |  |")
+  $lines.Add("")
+  $lines.Add("## Closeout")
+  $lines.Add("")
+  $lines.Add("- Copy confirmed pass/fail details into ``docs/RELEASE_TEST_MATRIX.md``.")
+  $lines.Add("- Blocker/High issues must be fixed and committed before RC.")
+  $lines.Add("- Close Shanka from the tray after the session.")
+
+  $utf8NoBom = [System.Text.UTF8Encoding]::new($false)
+  [System.IO.File]::WriteAllText($Path, (($lines -join "`n") + "`n"), $utf8NoBom)
+}
+
 if ([string]::IsNullOrWhiteSpace($ReleaseExe)) {
   $ReleaseExe = Join-Path $releaseDir "shanka.exe"
 }
@@ -135,6 +278,11 @@ if ([string]::IsNullOrWhiteSpace($ConfigDir)) {
   $ConfigDir = $defaultConfigDir
 }
 $ConfigDir = Get-FullPath -Path $ConfigDir
+
+if ([string]::IsNullOrWhiteSpace($ReportPath)) {
+  $ReportPath = Get-DefaultReportPath
+}
+$ReportPath = Get-FullPath -Path $ReportPath
 
 $existingProcesses = Get-Process shanka -ErrorAction SilentlyContinue
 if ($existingProcesses) {
@@ -151,6 +299,7 @@ Write-ManualFixtures
 if ((-not (Test-Path -LiteralPath (Join-Path $ConfigDir "config.json"))) -or -not $ReuseConfig) {
   Write-IsolatedConfig -Path $ConfigDir
 }
+Write-ManualReport -Path $ReportPath -ConfigDirectory $ConfigDir -ExecutablePath $ReleaseExe
 
 $startInfo = [System.Diagnostics.ProcessStartInfo]::new()
 $startInfo.FileName = $ReleaseExe
@@ -174,6 +323,7 @@ Write-Host "[release-manual-text-test] Safe Mode hotkey: Ctrl+Alt+Shift+S"
 Write-Host "[release-manual-text-test] Magic Mode hotkey: Ctrl+Alt+Shift+M"
 Write-Host "[release-manual-text-test] Notepad fixture: $notepadTextPath"
 Write-Host "[release-manual-text-test] Browser fixture: $browserTextPath"
+Write-Host "[release-manual-text-test] Manual report: $ReportPath"
 
 if ($SmokeOnly) {
   Stop-Process -Id $process.Id -Force
@@ -195,9 +345,14 @@ Write-Host "1. In Notepad, select one line and press Ctrl+Alt+Shift+S. Verify pr
 Write-Host "2. In Notepad, select multiple lines and press Ctrl+Alt+Shift+M. Verify direct replacement and history."
 Write-Host "3. In the browser input/textarea, test Safe replacement with edited preview text."
 Write-Host "4. On the read-only paragraph, test Safe copy without changing the page."
-Write-Host "5. Record results in docs/RELEASE_TEST_MATRIX.md."
+Write-Host "5. Record results in the generated report, then copy the final status to docs/RELEASE_TEST_MATRIX.md."
 Write-Host ""
+Write-Host "Generated report: $ReportPath"
 Write-Host "Close Shanka from tray when done. Isolated config remains at: $ConfigDir"
+
+if ($OpenReport) {
+  Start-Process -FilePath $ReportPath | Out-Null
+}
 
 if ($Wait) {
   Wait-Process -Id $process.Id
