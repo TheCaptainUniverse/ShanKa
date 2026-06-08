@@ -1,7 +1,12 @@
 use crate::{config, selection::SelectionMode};
 use reqwest::header;
 use serde::{Deserialize, Serialize};
-use std::time::{Duration, Instant};
+use std::{
+    sync::OnceLock,
+    time::{Duration, Instant},
+};
+
+const PERSONA_CATALOG_JSON: &str = include_str!("../../../shared/personas.json");
 
 pub trait RewriteProvider {
     fn name(&self) -> &'static str;
@@ -14,32 +19,29 @@ pub struct RewriteRequest<'a> {
     pub persona: Option<RewritePersona>,
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 pub struct RewritePersona {
-    pub id: &'static str,
-    pub name: &'static str,
-    pub system_prompt: &'static str,
+    pub name: String,
+    pub system_prompt: String,
 }
 
-const DEFAULT_SAFE_PERSONA_ID: &str = "clean-correction";
-const PERSONAS: [RewritePersona; 3] = [
-    RewritePersona {
-        id: "workplace-eq",
-        name: "High-EQ Workplace",
-        system_prompt: "Rewrite plain or emotional wording into tactful workplace communication.",
-    },
-    RewritePersona {
-        id: "academic-concise",
-        name: "Academic Concise",
-        system_prompt: "Remove colloquial wording, compress length, and keep academic rigor.",
-    },
-    RewritePersona {
-        id: "clean-correction",
-        name: "Clean Correction",
-        system_prompt:
-            "Correct typos, punctuation, and formatting without changing the author's voice.",
-    },
-];
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct PersonaCatalog {
+    default_safe_persona_id: String,
+    personas: Vec<PersonaDefinition>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct PersonaDefinition {
+    id: String,
+    name: String,
+    system_prompt: String,
+    enabled: bool,
+}
+
+static PERSONA_CATALOG: OnceLock<PersonaCatalog> = OnceLock::new();
 
 #[derive(Debug)]
 pub struct RewriteResponse {
@@ -148,6 +150,7 @@ impl RewriteProvider for MockRewriteProvider {
         };
         let persona_label = request
             .persona
+            .as_ref()
             .map(|persona| format!(" / {}", persona.name))
             .unwrap_or_default();
 
@@ -230,19 +233,45 @@ pub fn rewrite_selected_text_with_persona(
 }
 
 pub fn default_safe_persona_id() -> &'static str {
-    DEFAULT_SAFE_PERSONA_ID
+    persona_catalog().default_safe_persona_id.as_str()
 }
 
 fn resolve_persona(persona_id: &str) -> RewritePersona {
-    PERSONAS
+    let catalog = persona_catalog();
+    catalog
+        .personas
         .iter()
-        .copied()
+        .filter(|persona| persona.enabled)
         .find(|persona| persona.id == persona_id)
-        .unwrap_or_else(default_safe_persona)
+        .or_else(|| {
+            catalog
+                .personas
+                .iter()
+                .filter(|persona| persona.enabled)
+                .find(|persona| persona.id == catalog.default_safe_persona_id)
+        })
+        .or_else(|| catalog.personas.iter().find(|persona| persona.enabled))
+        .map(rewrite_persona_from_definition)
+        .unwrap_or_else(|| RewritePersona {
+            name: "Clean Correction".to_string(),
+            system_prompt:
+                "Correct typos, punctuation, and formatting without changing the author's voice."
+                    .to_string(),
+        })
 }
 
-fn default_safe_persona() -> RewritePersona {
-    resolve_persona(DEFAULT_SAFE_PERSONA_ID)
+fn persona_catalog() -> &'static PersonaCatalog {
+    PERSONA_CATALOG.get_or_init(|| {
+        serde_json::from_str(PERSONA_CATALOG_JSON)
+            .expect("shared/personas.json must be valid persona catalog JSON")
+    })
+}
+
+fn rewrite_persona_from_definition(persona: &PersonaDefinition) -> RewritePersona {
+    RewritePersona {
+        name: persona.name.clone(),
+        system_prompt: persona.system_prompt.clone(),
+    }
 }
 
 fn normalize_text(text: &str) -> String {
@@ -261,7 +290,7 @@ async fn call_chat_completion_with_json_fallback(
     persona: Option<RewritePersona>,
     text: &str,
 ) -> Result<String, RewriteError> {
-    match call_chat_completion(settings, mode, persona, text, OutputMode::Json).await {
+    match call_chat_completion(settings, mode, persona.clone(), text, OutputMode::Json).await {
         Ok(output) => Ok(output),
         Err(error) if error.timeout => Err(RewriteError::Timeout),
         Err(error) if error.retry_plain => {

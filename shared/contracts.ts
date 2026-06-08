@@ -1,3 +1,5 @@
+import type { PersonaId } from "./personas";
+
 export const REFINE_MODES = ["safe", "magic"] as const;
 
 export type RefineMode = (typeof REFINE_MODES)[number];
@@ -28,7 +30,7 @@ export type ErrorCode = (typeof ERROR_CODES)[number];
 export interface RefineRequest {
   text: string;
   mode: RefineMode;
-  personaId?: string;
+  personaId?: PersonaId;
 }
 
 export interface RefineResponse {

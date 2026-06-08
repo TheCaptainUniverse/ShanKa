@@ -1,0 +1,32 @@
+{
+  "defaultSafePersonaId": "clean-correction",
+  "personas": [
+    {
+      "id": "workplace-eq",
+      "name": "High-EQ Workplace",
+      "nameKey": "persona.workplaceEq.name",
+      "descriptionKey": "persona.workplaceEq.description",
+      "systemPrompt": "Rewrite plain or emotional wording into tactful workplace communication.",
+      "builtIn": true,
+      "enabled": true
+    },
+    {
+      "id": "academic-concise",
+      "name": "Academic Concise",
+      "nameKey": "persona.academicConcise.name",
+      "descriptionKey": "persona.academicConcise.description",
+      "systemPrompt": "Remove colloquial wording, compress length, and keep academic rigor.",
+      "builtIn": true,
+      "enabled": true
+    },
+    {
+      "id": "clean-correction",
+      "name": "Clean Correction",
+      "nameKey": "persona.cleanCorrection.name",
+      "descriptionKey": "persona.cleanCorrection.description",
+      "systemPrompt": "Correct typos, punctuation, and formatting without changing the author's voice.",
+      "builtIn": true,
+      "enabled": true
+    }
+  ]
+}

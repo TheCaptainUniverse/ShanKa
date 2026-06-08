@@ -6,24 +6,16 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import { Check, ChevronDown, Copy, LoaderCircle, RefreshCw, Replace, Search, X } from "lucide-vue-next";
 import { useI18n } from "@/i18n/useI18n";
 import { useHud } from "@/composables/useHud";
-import { TAURI_EVENTS, type ErrorCode, type HudUpdate } from "@shared";
+import { DEFAULT_SAFE_PERSONA_ID, ENABLED_PERSONAS, TAURI_EVENTS, type ErrorCode, type HudUpdate, type PersonaDefinition } from "@shared";
 import type { TranslationKey } from "@/i18n/messages";
 
 type PreviewAction = "copy" | "replace" | "regenerate";
-type PersonaOption = {
-  id: string;
-  label: TranslationKey;
-};
 
 const { t } = useI18n();
 const { currentHud, setHud } = useHud();
 const hudWindow = getCurrentWindow();
-const personaOptions = [
-  { id: "workplace-eq", label: "persona.workplaceEq.name" },
-  { id: "academic-concise", label: "persona.academicConcise.name" },
-  { id: "clean-correction", label: "persona.cleanCorrection.name" },
-] as const satisfies readonly PersonaOption[];
-const selectedPersonaId = ref("clean-correction");
+const personaOptions = ENABLED_PERSONAS;
+const selectedPersonaId = ref(DEFAULT_SAFE_PERSONA_ID);
 const personaSearch = ref("");
 const personaSelectOpen = ref(false);
 const busyAction = ref<PreviewAction | null>(null);
@@ -53,7 +45,7 @@ const isRefining = computed(() => currentHud.value.status === "refining");
 const isError = computed(() => currentHud.value.status === "error");
 const isPreview = computed(() => currentHud.value.status === "preview" && previewText.value !== "");
 const selectedPersona = computed(
-  () => personaOptions.find((persona) => persona.id === selectedPersonaId.value) ?? personaOptions[2],
+  () => personaOptions.find((persona) => persona.id === selectedPersonaId.value) ?? personaOptions[0]!,
 );
 const filteredPersonas = computed(() => {
   const query = personaSearch.value.trim().toLocaleLowerCase();
@@ -61,7 +53,7 @@ const filteredPersonas = computed(() => {
     return personaOptions;
   }
 
-  return personaOptions.filter((persona) => t(persona.label).toLocaleLowerCase().includes(query));
+  return personaOptions.filter((persona) => personaLabel(persona).toLocaleLowerCase().includes(query));
 });
 
 onMounted(() => {
@@ -162,6 +154,10 @@ function commandForAction(action: PreviewAction) {
   }
 }
 
+function personaLabel(persona: PersonaDefinition) {
+  return t(persona.nameKey as TranslationKey);
+}
+
 function selectPersona(personaId: string) {
   if (busyAction.value) {
     return;
@@ -219,7 +215,7 @@ function handleKeydown(event: KeyboardEvent) {
           :aria-label="t('settings.field.activePersona')"
           @click="personaSelectOpen = !personaSelectOpen"
         >
-          <span class="truncate">{{ t(selectedPersona.label) }}</span>
+          <span class="truncate">{{ personaLabel(selectedPersona) }}</span>
           <ChevronDown class="size-3.5 shrink-0 text-shanka-muted" />
         </button>
 
@@ -246,7 +242,7 @@ function handleKeydown(event: KeyboardEvent) {
               type="button"
               @click="selectPersona(persona.id)"
             >
-              <span class="truncate">{{ t(persona.label) }}</span>
+              <span class="truncate">{{ personaLabel(persona) }}</span>
             </button>
             <div v-if="filteredPersonas.length === 0" class="px-2 py-2 text-xs text-shanka-muted">
               {{ t("hud.persona.noResults") }}

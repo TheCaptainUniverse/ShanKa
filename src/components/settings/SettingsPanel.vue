@@ -6,6 +6,7 @@ import { useI18n } from "@/i18n/useI18n";
 import type { Locale, TranslationKey } from "@/i18n/messages";
 import { useTheme } from "@/theme/useTheme";
 import type { Theme } from "@/theme/useTheme";
+import { BUILT_IN_PERSONAS, DEFAULT_SAFE_PERSONA_ID, type PersonaDefinition } from "@shared";
 
 type SettingsTab = "general" | "personas" | "hotkeys";
 type HotkeyField = "safe_mode" | "magic_mode";
@@ -31,11 +32,7 @@ const navItems = [
   { id: "hotkeys", label: "settings.nav.hotkeys" },
 ] as const satisfies readonly { id: SettingsTab; label: TranslationKey }[];
 
-const personas = [
-  "persona.workplaceEq.name",
-  "persona.academicConcise.name",
-  "persona.cleanCorrection.name",
-] as const satisfies readonly TranslationKey[];
+const personas = BUILT_IN_PERSONAS;
 
 const selectedTab = ref<SettingsTab>("general");
 const appSettings = ref<AppSettingsConfig>({
@@ -410,6 +407,14 @@ function formatSettingsError(error: unknown): TranslationKey {
 
   return "settings.general.unknownError";
 }
+
+function personaName(persona: PersonaDefinition) {
+  return t(persona.nameKey as TranslationKey);
+}
+
+function personaDescription(persona: PersonaDefinition) {
+  return t(persona.descriptionKey as TranslationKey);
+}
 </script>
 
 <template>
@@ -553,13 +558,18 @@ function formatSettingsError(error: unknown): TranslationKey {
           <div class="mb-2 text-sm text-shanka-secondary">{{ t("settings.field.activePersona") }}</div>
           <div class="divide-y divide-shanka-border rounded-md border border-shanka-border">
             <button
-              v-for="(persona, index) in personas"
-              :key="persona"
-              class="flex h-11 w-full items-center justify-between px-3 text-sm text-shanka-secondary transition hover:bg-shanka-hover/5"
+              v-for="persona in personas"
+              :key="persona.id"
+              class="flex min-h-14 w-full items-center justify-between gap-4 px-3 py-2 text-sm text-shanka-secondary transition hover:bg-shanka-hover/5"
               type="button"
             >
-              <span>{{ t(persona) }}</span>
-              <span v-if="index === 0" class="text-xs text-shanka-success">
+              <span class="min-w-0">
+                <span class="block truncate text-shanka-primary">{{ personaName(persona) }}</span>
+                <span class="mt-1 block line-clamp-2 text-xs text-shanka-muted">
+                  {{ personaDescription(persona) }}
+                </span>
+              </span>
+              <span v-if="persona.id === DEFAULT_SAFE_PERSONA_ID" class="shrink-0 text-xs text-shanka-success">
                 {{ t("settings.status.active") }}
               </span>
             </button>
