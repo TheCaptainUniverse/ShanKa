@@ -38,6 +38,7 @@ Build Windows packages with:
 ```bash
 bun run tauri build
 bun run release:smoke
+bun run release:manual-text-smoke
 bun run release:install-smoke
 bun run release:msi-smoke
 bun run release:manifest
@@ -105,6 +106,7 @@ Before packaging a release, run:
 bun run check
 bun run tauri build
 bun run release:smoke
+bun run release:manual-text-smoke
 bun run release:install-smoke
 bun run release:msi-smoke
 bun run release:manifest

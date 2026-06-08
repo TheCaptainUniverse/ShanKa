@@ -15,6 +15,7 @@
     "release:install-smoke": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/release-install-smoke.ps1",
     "release:msi-smoke": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/release-msi-smoke.ps1",
     "release:manual-text-test": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/release-manual-text-test.ps1",
+    "release:manual-text-smoke": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/release-manual-text-test.ps1 -SmokeOnly",
     "release:manifest": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/release-manifest.ps1",
     "build": "bun run typecheck && vite build",
     "preview": "vite preview",
