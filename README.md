@@ -62,6 +62,15 @@ src-tauri\target\release\shanka.exe
 Close Shanka before returning to normal use, then remove the temporary directory
 when you no longer need the test profile.
 
+You can also launch a prepared manual test profile with fixtures:
+
+```bash
+bun run release:manual-text-test
+```
+
+It starts Shanka with mock rewrite settings, opens a Notepad fixture and browser
+fixture, and prints the hotkeys to use for the Windows text-link checklist.
+
 ## Development
 
 ```bash

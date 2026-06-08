@@ -63,6 +63,7 @@ $lines.Add("- Run ``bun run tauri build`` to regenerate bundles.")
 $lines.Add("- Run ``bun run release:smoke`` after packaging.")
 $lines.Add("- Run ``bun run release:install-smoke`` on Windows before publishing.")
 $lines.Add("- Or run ``bun run release:preflight`` to execute the full local release gate.")
+$lines.Add("- Use ``bun run release:manual-text-test`` to launch an isolated manual Windows text-link test profile.")
 $lines.Add("- Real installer smoke testing should still be recorded in ``docs/RELEASE_TEST_MATRIX.md``.")
 
 Set-Content -LiteralPath $outputPath -Value $lines -Encoding UTF8

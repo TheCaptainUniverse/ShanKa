@@ -13,6 +13,7 @@
     "release:preflight": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/release-preflight.ps1",
     "release:smoke": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/release-smoke.ps1",
     "release:install-smoke": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/release-install-smoke.ps1",
+    "release:manual-text-test": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/release-manual-text-test.ps1",
     "release:manifest": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/release-manifest.ps1",
     "build": "bun run typecheck && vite build",
     "preview": "vite preview",
