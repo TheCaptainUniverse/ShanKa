@@ -10,6 +10,7 @@
     "dev:server": "bun --watch server/src/index.ts",
     "check": "bun run check:rust && bun test && bun run build",
     "check:rust": "cargo fmt --manifest-path src-tauri/Cargo.toml --check && cargo check --manifest-path src-tauri/Cargo.toml && cargo test --manifest-path src-tauri/Cargo.toml",
+    "release:preflight": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/release-preflight.ps1",
     "release:smoke": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/release-smoke.ps1",
     "release:install-smoke": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/release-install-smoke.ps1",
     "release:manifest": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/release-manifest.ps1",
