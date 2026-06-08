@@ -1,6 +1,5 @@
 use serde::{Deserialize, Serialize};
 use std::{fs, path::PathBuf, time::SystemTime};
-use tauri::Manager;
 
 const HISTORY_FILE_NAME: &str = "history.json";
 const HISTORY_LIMIT: usize = 50;
@@ -79,8 +78,7 @@ fn save(app: &tauri::AppHandle, history: &[RewriteHistoryItem]) -> Result<(), St
 }
 
 fn history_path(app: &tauri::AppHandle) -> Result<PathBuf, String> {
-    app.path()
-        .app_config_dir()
+    crate::config::app_config_dir(app)
         .map(|directory| directory.join(HISTORY_FILE_NAME))
         .map_err(|error| error.to_string())
 }

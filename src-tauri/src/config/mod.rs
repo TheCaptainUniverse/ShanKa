@@ -1,6 +1,7 @@
 use global_hotkey::hotkey::HotKey;
 use serde::{Deserialize, Serialize};
 use std::{
+    ffi::OsString,
     fs,
     path::PathBuf,
     sync::atomic::{AtomicBool, Ordering},
@@ -11,6 +12,7 @@ use crate::{autostart, keychain, persona};
 
 const CONFIG_FILE_NAME: &str = "config.json";
 const CONFIG_SCHEMA_VERSION: u16 = 1;
+const CONFIG_DIR_ENV_VAR: &str = "SHANKA_CONFIG_DIR";
 static DEBUG_LOGGING_ENABLED: AtomicBool = AtomicBool::new(false);
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -363,11 +365,30 @@ fn save_app_config_at(path: &PathBuf, config: &AppConfig) -> Result<(), ConfigEr
         .map_err(|error| ConfigError::Io(format!("failed to write {}: {error}", path.display())))
 }
 
-fn config_path(app: &tauri::AppHandle) -> Result<PathBuf, ConfigError> {
+pub fn app_config_dir(app: &tauri::AppHandle) -> Result<PathBuf, ConfigError> {
+    if let Some(directory) = config_dir_override() {
+        return Ok(directory);
+    }
+
     app.path()
         .app_config_dir()
-        .map(|directory| directory.join(CONFIG_FILE_NAME))
         .map_err(|error| ConfigError::Path(error.to_string()))
+}
+
+fn config_path(app: &tauri::AppHandle) -> Result<PathBuf, ConfigError> {
+    app_config_dir(app).map(|directory| directory.join(CONFIG_FILE_NAME))
+}
+
+fn config_dir_override() -> Option<PathBuf> {
+    std::env::var_os(CONFIG_DIR_ENV_VAR).and_then(config_dir_override_from_value)
+}
+
+fn config_dir_override_from_value(value: OsString) -> Option<PathBuf> {
+    if value.to_string_lossy().trim().is_empty() {
+        return None;
+    }
+
+    Some(PathBuf::from(value))
 }
 
 #[cfg(target_os = "macos")]
@@ -399,7 +420,8 @@ fn to_tauri_error(error: ConfigError) -> tauri::Error {
 
 #[cfg(test)]
 mod tests {
-    use super::{AppSettingsConfig, HotkeyConfig};
+    use super::{config_dir_override_from_value, AppSettingsConfig, HotkeyConfig};
+    use std::{ffi::OsString, path::PathBuf};
 
     #[test]
     fn app_settings_do_not_serialize_plaintext_api_key() {
@@ -444,5 +466,21 @@ mod tests {
         assert_eq!(normalized.model, "deepseek-v4-flash");
         assert_eq!(normalized.timeout_ms, 1_000);
         assert!(normalized.launch_at_login);
+    }
+
+    #[test]
+    fn config_dir_override_ignores_empty_values() {
+        assert_eq!(config_dir_override_from_value(OsString::from("")), None);
+        assert_eq!(config_dir_override_from_value(OsString::from("   ")), None);
+    }
+
+    #[test]
+    fn config_dir_override_accepts_explicit_path() {
+        let path = PathBuf::from(r"C:\Temp\ShankaConfig");
+
+        assert_eq!(
+            config_dir_override_from_value(path.clone().into_os_string()),
+            Some(path)
+        );
     }
 }

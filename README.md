@@ -38,6 +38,7 @@ Build Windows packages with:
 ```bash
 bun run tauri build
 bun run release:smoke
+bun run release:install-smoke
 bun run release:manifest
 ```
 
@@ -48,6 +49,18 @@ Current Windows outputs:
 
 Before testing a packaged build, close any existing `shanka.exe` process. A
 running development or old packaged instance can already own the global hotkeys.
+Use `bun run release:preflight` to run the full local release gate in one pass.
+
+For manual Windows text-link testing, you can isolate test settings and history
+from your daily Shanka profile by starting the app with `SHANKA_CONFIG_DIR`:
+
+```powershell
+$env:SHANKA_CONFIG_DIR="$env:TEMP\ShankaManualConfig"
+src-tauri\target\release\shanka.exe
+```
+
+Close Shanka before returning to normal use, then remove the temporary directory
+when you no longer need the test profile.
 
 ## Development
 
@@ -75,7 +88,14 @@ Before packaging a release, run:
 bun run check
 bun run tauri build
 bun run release:smoke
+bun run release:install-smoke
 bun run release:manifest
+```
+
+Or run the complete local release gate:
+
+```bash
+bun run release:preflight
 ```
 
 ## Troubleshooting
