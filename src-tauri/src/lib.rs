@@ -62,6 +62,11 @@ fn save_app_settings(
 }
 
 #[tauri::command]
+fn test_provider_connection(settings: config::AppSettingsConfig) -> Result<(), String> {
+    rewrite::test_provider_connection(settings).map_err(|error| error.to_string())
+}
+
+#[tauri::command]
 fn save_persona_config(
     app: tauri::AppHandle,
     personas: persona::PersonaConfig,
@@ -133,6 +138,7 @@ pub fn run() {
             get_hotkey_config,
             get_persona_config,
             save_app_settings,
+            test_provider_connection,
             save_hotkey_config,
             save_persona_config,
             set_hotkey_recording_active,

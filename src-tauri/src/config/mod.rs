@@ -58,6 +58,7 @@ pub struct ResolvedHotkeyConfig {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct AppSettingsConfig {
+    pub provider: String,
     pub api_key: String,
     pub base_url: String,
     pub model: String,
@@ -68,6 +69,7 @@ pub struct AppSettingsConfig {
 impl Default for AppSettingsConfig {
     fn default() -> Self {
         Self {
+            provider: "openai".to_string(),
             api_key: String::new(),
             base_url: "https://api.openai.com/v1".to_string(),
             model: String::new(),
@@ -119,10 +121,11 @@ pub fn setup(app: &tauri::AppHandle) -> tauri::Result<()> {
     apply_runtime_flags(&config);
     let path = config_path(app).map_err(to_tauri_error)?;
     println!(
-        "[config] app config ready at {}; Safe Mode={}, Magic Mode={}, Base URL={}, Model={}, Default Persona={}",
+        "[config] app config ready at {}; Safe Mode={}, Magic Mode={}, Provider={}, Base URL={}, Model={}, Default Persona={}",
         path.display(),
         config.hotkeys.safe_mode,
         config.hotkeys.magic_mode,
+        config.settings.provider,
         config.settings.base_url,
         if config.settings.model.is_empty() {
             "<mock>"
@@ -222,6 +225,11 @@ impl AppSettingsConfig {
         }
 
         Ok(Self {
+            provider: if self.provider.trim().is_empty() {
+                "custom".to_string()
+            } else {
+                self.provider.trim().to_string()
+            },
             api_key: self.api_key.trim().to_string(),
             base_url,
             model: self.model.trim().to_string(),

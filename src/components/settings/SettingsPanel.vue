@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref } from "vue";
 import { invoke } from "@tauri-apps/api/core";
-import { Copy, Keyboard, Pencil, Plus, Power, Save, Star, Sun, Moon, Trash2, X } from "lucide-vue-next";
+import { Copy, Keyboard, Pencil, Plus, Power, Save, Star, Sun, Moon, Trash2, X, Zap } from "lucide-vue-next";
 import { useI18n } from "@/i18n/useI18n";
 import type { Locale, TranslationKey } from "@/i18n/messages";
 import { useTheme } from "@/theme/useTheme";
@@ -16,6 +16,7 @@ type HotkeyConfig = {
 };
 type HotkeyStatus = "idle" | "saved" | "error";
 type AppSettingsConfig = {
+  provider: string;
   api_key: string;
   base_url: string;
   model: string;
@@ -23,6 +24,7 @@ type AppSettingsConfig = {
   debug_logging: boolean;
 };
 type AppSettingsStatus = "idle" | "saved" | "error";
+type ProviderTestStatus = "idle" | "success" | "error";
 type PersonaStatus = "idle" | "saved" | "error";
 type PersonaDraftMode = "create" | "edit";
 type PersonaDraft = {
@@ -40,8 +42,36 @@ const navItems = [
   { id: "hotkeys", label: "settings.nav.hotkeys" },
 ] as const satisfies readonly { id: SettingsTab; label: TranslationKey }[];
 
+const providerPresets = [
+  {
+    id: "deepseek",
+    label: "DeepSeek",
+    base_url: "https://api.deepseek.com",
+    model: "deepseek-chat",
+  },
+  {
+    id: "openai",
+    label: "OpenAI",
+    base_url: "https://api.openai.com/v1",
+    model: "gpt-4.1-mini",
+  },
+  {
+    id: "openrouter",
+    label: "OpenRouter",
+    base_url: "https://openrouter.ai/api/v1",
+    model: "openai/gpt-4.1-mini",
+  },
+  {
+    id: "custom",
+    label: "Custom",
+    base_url: "",
+    model: "",
+  },
+] as const;
+
 const selectedTab = ref<SettingsTab>("general");
 const appSettings = ref<AppSettingsConfig>({
+  provider: "openai",
   api_key: "",
   base_url: "",
   model: "",
@@ -53,6 +83,9 @@ const settingsSaving = ref(false);
 const settingsDirty = ref(false);
 const settingsStatus = ref<AppSettingsStatus>("idle");
 const settingsErrorKey = ref<TranslationKey | null>(null);
+const providerTesting = ref(false);
+const providerTestStatus = ref<ProviderTestStatus>("idle");
+const providerTestErrorKey = ref<TranslationKey | null>(null);
 const hotkeyConfig = ref<HotkeyConfig>({
   safe_mode: "",
   magic_mode: "",
@@ -85,6 +118,7 @@ const themeLabels = computed<Record<Theme, string>>(() => ({
 }));
 
 const settingsErrorMessage = computed(() => (settingsErrorKey.value ? t(settingsErrorKey.value) : ""));
+const providerTestErrorMessage = computed(() => (providerTestErrorKey.value ? t(providerTestErrorKey.value) : ""));
 const hotkeyErrorMessage = computed(() => (hotkeyErrorKey.value ? t(hotkeyErrorKey.value) : ""));
 const personaErrorMessage = computed(() => (personaErrorKey.value ? t(personaErrorKey.value) : ""));
 const enabledPersonaCount = computed(() => personaConfig.value.items.filter((persona) => persona.enabled).length);
@@ -99,6 +133,14 @@ const canSaveSettings = computed(
     !settingsLoading.value &&
     !settingsSaving.value &&
     appSettings.value.base_url.trim() !== "",
+);
+const canTestProvider = computed(
+  () =>
+    !settingsLoading.value &&
+    !providerTesting.value &&
+    appSettings.value.api_key.trim() !== "" &&
+    appSettings.value.base_url.trim() !== "" &&
+    appSettings.value.model.trim() !== "",
 );
 
 const canSaveHotkeys = computed(
@@ -179,13 +221,7 @@ async function saveAppSettings() {
 
   try {
     const savedSettings = await invoke<AppSettingsConfig>("save_app_settings", {
-      settings: {
-        api_key: appSettings.value.api_key.trim(),
-        base_url: appSettings.value.base_url.trim(),
-        model: appSettings.value.model.trim(),
-        timeout_ms: Math.round(appSettings.value.timeout_ms),
-        debug_logging: appSettings.value.debug_logging,
-      },
+      settings: appSettingsPayload(),
     });
     appSettings.value = savedSettings;
     settingsDirty.value = false;
@@ -195,6 +231,30 @@ async function saveAppSettings() {
     settingsErrorKey.value = formatSettingsError(error);
   } finally {
     settingsSaving.value = false;
+  }
+}
+
+async function testProviderConnection() {
+  if (!canTestProvider.value) {
+    providerTestStatus.value = "error";
+    providerTestErrorKey.value = "settings.providerTest.missing";
+    return;
+  }
+
+  providerTesting.value = true;
+  providerTestErrorKey.value = null;
+  providerTestStatus.value = "idle";
+
+  try {
+    await invoke("test_provider_connection", {
+      settings: appSettingsPayload(),
+    });
+    providerTestStatus.value = "success";
+  } catch (error) {
+    providerTestStatus.value = "error";
+    providerTestErrorKey.value = formatProviderTestError(error);
+  } finally {
+    providerTesting.value = false;
   }
 }
 
@@ -265,9 +325,38 @@ function markHotkeysDirty() {
 
 function markSettingsDirty() {
   settingsDirty.value = true;
+  providerTestStatus.value = "idle";
+  providerTestErrorKey.value = null;
   if (settingsStatus.value === "saved") {
     settingsStatus.value = "idle";
   }
+}
+
+function appSettingsPayload(): AppSettingsConfig {
+  return {
+    provider: appSettings.value.provider.trim() || "custom",
+    api_key: appSettings.value.api_key.trim(),
+    base_url: appSettings.value.base_url.trim(),
+    model: appSettings.value.model.trim(),
+    timeout_ms: Math.round(appSettings.value.timeout_ms),
+    debug_logging: appSettings.value.debug_logging,
+  };
+}
+
+function applyProviderPreset(providerId: string) {
+  const preset = providerPresets.find((item) => item.id === providerId);
+  if (!preset) {
+    appSettings.value.provider = "custom";
+    markSettingsDirty();
+    return;
+  }
+
+  appSettings.value.provider = preset.id;
+  if (preset.id !== "custom") {
+    appSettings.value.base_url = preset.base_url;
+    appSettings.value.model = preset.model;
+  }
+  markSettingsDirty();
 }
 
 function markPersonasDirty() {
@@ -667,6 +756,28 @@ function formatSettingsError(error: unknown): TranslationKey {
   return "settings.general.unknownError";
 }
 
+function formatProviderTestError(error: unknown): TranslationKey {
+  const message = error instanceof Error ? error.message : String(error);
+
+  if (message.includes("api_key, base_url, and model are required")) {
+    return "settings.providerTest.missing";
+  }
+  if (message.includes("PROVIDER_TEST_AUTH")) {
+    return "settings.providerTest.auth";
+  }
+  if (message.includes("PROVIDER_TEST_MODEL")) {
+    return "settings.providerTest.model";
+  }
+  if (message.includes("PROVIDER_TEST_NETWORK")) {
+    return "settings.providerTest.network";
+  }
+  if (message.includes("request timed out")) {
+    return "settings.providerTest.timeout";
+  }
+
+  return "settings.providerTest.remote";
+}
+
 function formatPersonaError(error: unknown): TranslationKey {
   const message = error instanceof Error ? error.message : String(error);
 
@@ -749,6 +860,20 @@ function personaDescription(persona: PersonaDefinition) {
 
         <form v-if="selectedTab === 'general'" class="mt-6 space-y-5" @submit.prevent="saveAppSettings">
           <label class="block">
+            <span class="mb-2 block text-sm text-shanka-secondary">{{ t("settings.field.provider") }}</span>
+            <select
+              v-model="appSettings.provider"
+              class="h-10 w-full rounded-md border border-transparent bg-shanka-input px-3 text-sm text-shanka-primary outline-none transition focus:border-shanka-focus"
+              :disabled="settingsLoading"
+              @change="applyProviderPreset(appSettings.provider)"
+            >
+              <option v-for="preset in providerPresets" :key="preset.id" :value="preset.id">
+                {{ preset.id === "custom" ? t("settings.provider.custom") : preset.label }}
+              </option>
+            </select>
+          </label>
+
+          <label class="block">
             <span class="mb-2 block text-sm text-shanka-secondary">{{ t("settings.field.apiKey") }}</span>
             <input
               v-model.trim="appSettings.api_key"
@@ -811,6 +936,31 @@ function personaDescription(persona: PersonaDefinition) {
               @change="markSettingsDirty"
             />
           </label>
+
+          <div class="flex flex-wrap items-center justify-between gap-3 rounded-md border border-shanka-border px-3 py-2">
+            <p v-if="providerTesting" class="text-xs text-shanka-muted">
+              {{ t("settings.providerTest.testing") }}
+            </p>
+            <p v-else-if="providerTestStatus === 'success'" class="text-xs text-shanka-success">
+              {{ t("settings.providerTest.success") }}
+            </p>
+            <p v-else-if="providerTestStatus === 'error'" class="text-xs text-red-500 dark:text-red-400">
+              {{ providerTestErrorMessage }}
+            </p>
+            <p v-else class="text-xs text-shanka-muted">
+              {{ t("settings.providerTest.hint") }}
+            </p>
+
+            <button
+              class="inline-flex h-8 items-center gap-2 rounded-md border border-shanka-border px-3 text-xs text-shanka-secondary transition hover:bg-shanka-hover/5 hover:text-shanka-primary disabled:cursor-not-allowed disabled:opacity-50"
+              :disabled="!canTestProvider"
+              type="button"
+              @click="testProviderConnection"
+            >
+              <Zap class="size-3.5" aria-hidden="true" />
+              <span>{{ t("settings.providerTest.action") }}</span>
+            </button>
+          </div>
 
           <div class="flex flex-wrap items-center justify-between gap-3">
             <p v-if="settingsLoading" class="text-xs text-shanka-muted">

@@ -209,6 +209,20 @@ pub fn default_safe_persona_id() -> &'static str {
     persona::default_safe_persona_id()
 }
 
+pub fn test_provider_connection(settings: config::AppSettingsConfig) -> Result<(), RewriteError> {
+    let settings = settings
+        .normalized()
+        .map_err(|error| RewriteError::Config(error.to_string()))?;
+
+    if !settings.can_use_remote_provider() {
+        return Err(RewriteError::Config(
+            "api_key, base_url, and model are required".to_string(),
+        ));
+    }
+
+    tauri::async_runtime::block_on(call_provider_connection_test(&settings))
+}
+
 fn normalize_text(text: &str) -> String {
     text.trim_matches('\0')
         .lines()
@@ -335,6 +349,67 @@ async fn call_chat_completion(
     Ok(output)
 }
 
+async fn call_provider_connection_test(
+    settings: &config::AppSettingsConfig,
+) -> Result<(), RewriteError> {
+    let client = reqwest::Client::builder()
+        .timeout(Duration::from_millis(settings.timeout_ms))
+        .build()
+        .map_err(|error| RewriteError::Remote(format!("PROVIDER_TEST_NETWORK: {error}")))?;
+    let endpoint = format!(
+        "{}/chat/completions",
+        settings.base_url.trim_end_matches('/')
+    );
+
+    let response = client
+        .post(endpoint)
+        .bearer_auth(&settings.api_key)
+        .header(header::ACCEPT_ENCODING, "identity")
+        .json(&ChatCompletionRequest {
+            model: settings.model.clone(),
+            messages: vec![
+                ChatMessage {
+                    role: "system",
+                    content: "Reply with OK.".to_string(),
+                },
+                ChatMessage {
+                    role: "user",
+                    content: "ping".to_string(),
+                },
+            ],
+            temperature: 0.0,
+            max_tokens: 8,
+            response_format: None,
+        })
+        .send()
+        .await
+        .map_err(|error| {
+            if error.is_timeout() {
+                RewriteError::Timeout
+            } else {
+                RewriteError::Remote(format!("PROVIDER_TEST_NETWORK: {error}"))
+            }
+        })?;
+
+    let status = response.status();
+    let body = response.bytes().await.map_err(|error| {
+        RewriteError::Remote(format!(
+            "PROVIDER_TEST_REMOTE: failed to read response: {error}"
+        ))
+    })?;
+
+    if status.is_success() {
+        return Ok(());
+    }
+
+    let body_sample = response_body_sample(&body);
+    let category = provider_test_error_category(status.as_u16(), &body_sample);
+    Err(RewriteError::Remote(format!(
+        "{category}{}",
+        provider_text_debug_suffix("body sample", &body_sample)
+    )))
+}
+
 impl ProviderCallError {
     fn timeout() -> Self {
         Self {
@@ -394,6 +469,24 @@ fn response_format_may_be_unsupported(status: u16, body: &str) -> bool {
         || body.contains("unsupported")
         || body.contains("unknown")
         || body.contains("invalid")
+}
+
+fn provider_test_error_category(status: u16, body: &str) -> &'static str {
+    let body = body.to_ascii_lowercase();
+
+    if status == 401 || status == 403 {
+        return "PROVIDER_TEST_AUTH";
+    }
+
+    if status == 404
+        || body.contains("model")
+        || body.contains("not found")
+        || body.contains("does not exist")
+    {
+        return "PROVIDER_TEST_MODEL";
+    }
+
+    "PROVIDER_TEST_REMOTE"
 }
 
 fn max_tokens_for_text(text: &str) -> u32 {
