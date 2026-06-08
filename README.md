@@ -2,6 +2,49 @@
 
 Shanka is a Tauri + Vue + Bun desktop app for system-level AI text refinement.
 
+## Using Shanka
+
+Shanka runs in the background and refines selected text from other desktop apps.
+The first launch defaults to Chinese UI, and the language can be changed in
+Settings.
+
+Default hotkeys:
+
+- Safe Mode: generate an editable preview above the cursor. You can copy,
+  replace, or regenerate the result before it touches the original text.
+- Magic Mode: rewrite and replace the selected text directly.
+
+The default hotkeys can be changed from Settings. During hotkey recording,
+Shanka pauses Safe/Magic triggers so recording a shortcut does not accidentally
+rewrite text.
+
+## First Setup
+
+1. Open Shanka from the app window or system tray.
+2. Choose a provider preset such as DeepSeek, OpenAI, or OpenRouter.
+3. Enter the API key, Base URL, and model, then run the connection test.
+4. Save the settings and select text in any desktop app.
+5. Trigger Safe Mode first to verify the preview flow before using Magic Mode.
+
+API keys are stored in the system keychain when available. The app config stores
+only a key reference, not the plaintext key.
+
+## Release Packages
+
+Build Windows packages with:
+
+```bash
+bun run tauri build
+```
+
+Current Windows outputs:
+
+- `src-tauri/target/release/bundle/msi/Shanka_0.1.0_x64_en-US.msi`
+- `src-tauri/target/release/bundle/nsis/Shanka_0.1.0_x64-setup.exe`
+
+Before testing a packaged build, close any existing `shanka.exe` process. A
+running development or old packaged instance can already own the global hotkeys.
+
 ## Development
 
 ```bash
@@ -28,6 +71,25 @@ Before packaging a release, run:
 bun run check
 bun run tauri build
 ```
+
+## Troubleshooting
+
+- No selected text: make sure the target app has an active text selection, then
+  try Safe Mode again.
+- Hotkey registration failed: another app or Shanka instance may already use the
+  shortcut. Close duplicate Shanka processes or record a different shortcut.
+- Paste failed: if the target app is elevated on Windows, Shanka keeps the result
+  on the clipboard and shows a saved-to-clipboard state.
+- macOS input does not work: enable Accessibility permission for Shanka in
+  System Settings.
+- Linux behavior depends on the desktop session. X11 is the preferred validation
+  path; Wayland may limit global hotkeys and simulated input.
+
+## Privacy
+
+By default, logs avoid full selected text, provider response bodies, and complete
+API keys. Debug logging can be enabled temporarily from Settings when diagnosing
+clipboard or provider issues.
 
 ## Architecture
 
