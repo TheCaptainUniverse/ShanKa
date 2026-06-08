@@ -1,0 +1,45 @@
+export const REFINE_MODES = ["safe", "magic"] as const;
+
+export type RefineMode = (typeof REFINE_MODES)[number];
+
+export const HUD_STATUSES = [
+  "idle",
+  "refining",
+  "ready",
+  "replaced",
+  "error",
+  "saved_to_clipboard",
+] as const;
+
+export type HudStatus = (typeof HUD_STATUSES)[number];
+
+export const ERROR_CODES = [
+  "NO_TEXT_SELECTED",
+  "NETWORK_TIMEOUT",
+  "API_ERROR",
+  "API_CONFIG_MISSING",
+  "PASTE_BLOCKED",
+  "CLIPBOARD_ACCESS_FAILED",
+] as const;
+
+export type ErrorCode = (typeof ERROR_CODES)[number];
+
+export interface RefineRequest {
+  text: string;
+  mode: RefineMode;
+  personaId?: string;
+}
+
+export interface RefineResponse {
+  ok: boolean;
+  text?: string;
+  durationMs: number;
+  errorCode?: ErrorCode;
+  message?: string;
+}
+
+export interface HudUpdate {
+  status: HudStatus;
+  message?: string;
+  errorCode?: ErrorCode;
+}
