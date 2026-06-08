@@ -73,6 +73,7 @@ pub fn run(app: &tauri::AppHandle, mode: SelectionMode) -> Result<PipelineOutcom
     if let Err(error) = clear_any_safe_preview() {
         println!("[pipeline] failed to clear stale Safe Mode preview before new run: {error}");
     }
+    crate::platform::remember_preview_target_window();
     hud::refining(app);
 
     let outcome = match mode {
@@ -116,14 +117,21 @@ pub fn replace_safe_preview(
     let replacement_text = edited_text.unwrap_or(preview.replacement_text);
     crate::window::hide_hud(app);
     crate::platform::restore_preview_target_window();
-    clipboard::replace_selected_text(&replacement_text).map_err(PipelineError::Replacement)?;
+    let replaced = replace_or_save_to_clipboard(app, &replacement_text)?;
     clear_safe_preview(preview_id).map_err(PipelineError::Replacement)?;
-    hud::replaced(app);
-    println!(
-        "[pipeline] Safe Mode preview {} replaced selection with {} characters",
-        preview.id,
-        replacement_text.chars().count()
-    );
+    if replaced {
+        println!(
+            "[pipeline] Safe Mode preview {} replaced selection with {} characters",
+            preview.id,
+            replacement_text.chars().count()
+        );
+    } else {
+        println!(
+            "[pipeline] Safe Mode preview {} saved {} characters to clipboard after PASTE_BLOCKED",
+            preview.id,
+            replacement_text.chars().count()
+        );
+    }
     Ok(())
 }
 
@@ -243,15 +251,50 @@ fn run_safe_preview(app: &tauri::AppHandle) -> Result<PipelineOutcome, PipelineE
 
 fn run_magic_replacement(app: &tauri::AppHandle) -> Result<PipelineOutcome, PipelineError> {
     let selection = capture_and_rewrite(app, SelectionMode::Magic, None)?;
-    clipboard::replace_selected_text(&selection.replacement_text)
-        .map_err(PipelineError::Replacement)?;
-    hud::replaced(app);
-    println!(
-        "[pipeline] Magic Mode replaced {} characters",
-        selection.replacement_text.chars().count()
-    );
+    let replaced = replace_or_save_to_clipboard(app, &selection.replacement_text)?;
+    if replaced {
+        println!(
+            "[pipeline] Magic Mode replaced {} characters",
+            selection.replacement_text.chars().count()
+        );
+    } else {
+        println!(
+            "[pipeline] Magic Mode saved {} characters to clipboard after PASTE_BLOCKED",
+            selection.replacement_text.chars().count()
+        );
+    }
 
     Ok(selection.into_outcome(Duration::ZERO))
+}
+
+fn replace_or_save_to_clipboard(
+    app: &tauri::AppHandle,
+    replacement_text: &str,
+) -> Result<bool, PipelineError> {
+    if crate::platform::paste_target_requires_elevation() {
+        clipboard::copy_text_to_clipboard(replacement_text).map_err(PipelineError::Replacement)?;
+        hud::saved_to_clipboard(app);
+        println!(
+            "[pipeline] PASTE_BLOCKED: target window appears elevated; saved replacement to clipboard"
+        );
+        return Ok(false);
+    }
+
+    match clipboard::replace_selected_text(replacement_text) {
+        Ok(()) => {
+            hud::replaced(app);
+            Ok(true)
+        }
+        Err(paste_error) => {
+            println!(
+                "[pipeline] PASTE_BLOCKED: paste failed; saving replacement to clipboard: {paste_error}"
+            );
+            clipboard::copy_text_to_clipboard(replacement_text)
+                .map_err(PipelineError::Replacement)?;
+            hud::saved_to_clipboard(app);
+            Ok(false)
+        }
+    }
 }
 
 struct RewritePipelineResult {

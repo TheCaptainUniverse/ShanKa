@@ -123,10 +123,105 @@ pub fn restore_preview_target_window() {
 }
 
 #[cfg(target_os = "windows")]
+pub fn paste_target_requires_elevation() -> bool {
+    use std::sync::atomic::Ordering;
+    use windows_sys::Win32::UI::WindowsAndMessaging::{
+        GetForegroundWindow, GetWindowThreadProcessId,
+    };
+
+    if is_current_process_elevated() {
+        return false;
+    }
+
+    let remembered_window = PREVIEW_TARGET_WINDOW.load(Ordering::Acquire) as isize;
+    let target_window = if remembered_window == 0 {
+        unsafe { GetForegroundWindow() }
+    } else {
+        remembered_window as windows_sys::Win32::Foundation::HWND
+    };
+
+    if target_window.is_null() {
+        return false;
+    }
+
+    let mut process_id = 0;
+    unsafe { GetWindowThreadProcessId(target_window, &mut process_id) };
+    if process_id == 0 || process_id == std::process::id() {
+        return false;
+    }
+
+    match is_windows_process_elevated(process_id) {
+        Ok(elevated) => elevated,
+        Err(error) => {
+            println!(
+                "[platform] could not inspect paste target integrity; using clipboard fallback: {error}"
+            );
+            true
+        }
+    }
+}
+
+#[cfg(target_os = "windows")]
 fn is_windows_key_down(virtual_key: u16) -> bool {
     use windows_sys::Win32::UI::Input::KeyboardAndMouse::GetAsyncKeyState;
 
     unsafe { GetAsyncKeyState(virtual_key as i32) & 0x8000u16 as i16 != 0 }
+}
+
+#[cfg(target_os = "windows")]
+fn is_current_process_elevated() -> bool {
+    use windows_sys::Win32::System::Threading::GetCurrentProcessId;
+
+    is_windows_process_elevated(unsafe { GetCurrentProcessId() }).unwrap_or(false)
+}
+
+#[cfg(target_os = "windows")]
+fn is_windows_process_elevated(process_id: u32) -> Result<bool, String> {
+    use windows_sys::Win32::{
+        Foundation::CloseHandle,
+        Security::{GetTokenInformation, TokenElevation, TOKEN_ELEVATION, TOKEN_QUERY},
+        System::Threading::{OpenProcess, OpenProcessToken, PROCESS_QUERY_LIMITED_INFORMATION},
+    };
+
+    let process = unsafe { OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, 0, process_id) };
+    if process.is_null() {
+        return Err(format!(
+            "failed to open process {process_id}: {}",
+            std::io::Error::last_os_error()
+        ));
+    }
+
+    let mut token = std::ptr::null_mut();
+    let opened_token = unsafe { OpenProcessToken(process, TOKEN_QUERY, &mut token) } != 0;
+    unsafe { CloseHandle(process) };
+    if !opened_token {
+        return Err(format!(
+            "failed to open process token for {process_id}: {}",
+            std::io::Error::last_os_error()
+        ));
+    }
+
+    let mut elevation = TOKEN_ELEVATION { TokenIsElevated: 0 };
+    let mut return_length = 0;
+    let ok = unsafe {
+        GetTokenInformation(
+            token,
+            TokenElevation,
+            &mut elevation as *mut _ as *mut _,
+            std::mem::size_of::<TOKEN_ELEVATION>() as u32,
+            &mut return_length,
+        )
+    } != 0;
+    unsafe { CloseHandle(token) };
+
+    if ok {
+        Ok(elevation.TokenIsElevated != 0)
+    } else {
+        Err(format!(
+            "failed to query process token elevation for {process_id}: {}",
+            std::io::Error::last_os_error()
+        ))
+    }
 }
 
 #[cfg(target_os = "windows")]
@@ -300,3 +395,8 @@ pub fn remember_preview_target_window() {}
 
 #[cfg(not(target_os = "windows"))]
 pub fn restore_preview_target_window() {}
+
+#[cfg(not(target_os = "windows"))]
+pub fn paste_target_requires_elevation() -> bool {
+    false
+}
