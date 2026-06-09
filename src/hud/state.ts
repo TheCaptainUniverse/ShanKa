@@ -29,6 +29,8 @@ export function hudErrorMessageKey(errorCode?: ErrorCode | null): TranslationKey
       return "hud.error.networkTimeout";
     case "API_CONFIG_MISSING":
       return "hud.error.apiConfigMissing";
+    case "PROVIDER_RESPONSE_INVALID":
+      return "hud.error.providerResponseInvalid";
     case "CLIPBOARD_ACCESS_FAILED":
       return "hud.error.clipboardAccessFailed";
     case "PASTE_BLOCKED":

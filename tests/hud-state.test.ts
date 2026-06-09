@@ -22,6 +22,7 @@ describe("HUD message state", () => {
     ["NO_TEXT_SELECTED", "hud.error.noTextSelected"],
     ["NETWORK_TIMEOUT", "hud.error.networkTimeout"],
     ["API_CONFIG_MISSING", "hud.error.apiConfigMissing"],
+    ["PROVIDER_RESPONSE_INVALID", "hud.error.providerResponseInvalid"],
     ["CLIPBOARD_ACCESS_FAILED", "hud.error.clipboardAccessFailed"],
     ["PASTE_BLOCKED", "hud.error.pasteBlocked"],
     ["PLATFORM_PERMISSION_REQUIRED", "hud.error.platformPermissionRequired"],

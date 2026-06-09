@@ -29,6 +29,7 @@ describe("shared contracts", () => {
     expect(ERROR_CODES).toContain("NO_TEXT_SELECTED");
     expect(ERROR_CODES).toContain("PASTE_BLOCKED");
     expect(ERROR_CODES).toContain("PLATFORM_PERMISSION_REQUIRED");
+    expect(ERROR_CODES).toContain("PROVIDER_RESPONSE_INVALID");
   });
 
   test("keeps Tauri event names stable", () => {

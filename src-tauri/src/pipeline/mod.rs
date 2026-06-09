@@ -56,6 +56,7 @@ impl PipelineError {
             Self::Selection(_) => "API_ERROR",
             Self::Rewrite(RewriteError::Config(_)) => "API_CONFIG_MISSING",
             Self::Rewrite(RewriteError::Timeout) => "NETWORK_TIMEOUT",
+            Self::Rewrite(RewriteError::InvalidResponse(_)) => "PROVIDER_RESPONSE_INVALID",
             Self::Rewrite(_) => "API_ERROR",
             Self::Replacement(SelectionError::Clipboard(_)) => "CLIPBOARD_ACCESS_FAILED",
             Self::Replacement(_) => "PASTE_BLOCKED",

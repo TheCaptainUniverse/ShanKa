@@ -26,6 +26,7 @@ pub enum RewriteError {
     Config(String),
     EmptyInput,
     Timeout,
+    InvalidResponse(String),
     Remote(String),
 }
 
@@ -35,6 +36,9 @@ impl std::fmt::Display for RewriteError {
             Self::Config(message) => write!(formatter, "rewrite config error: {message}"),
             Self::EmptyInput => write!(formatter, "rewrite input is empty"),
             Self::Timeout => write!(formatter, "remote rewrite error: request timed out"),
+            Self::InvalidResponse(message) => {
+                write!(formatter, "remote rewrite response invalid: {message}")
+            }
             Self::Remote(message) => write!(formatter, "remote rewrite error: {message}"),
         }
     }
@@ -89,7 +93,7 @@ struct StructuredRewriteContent {
     text: String,
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum OutputMode {
     Json,
     Plain,
@@ -99,7 +103,9 @@ enum OutputMode {
 struct ProviderCallError {
     message: String,
     retry_plain: bool,
+    retry_same: bool,
     timeout: bool,
+    invalid_response: bool,
 }
 
 impl RewriteProvider for MockRewriteProvider {
@@ -239,7 +245,15 @@ async fn call_chat_completion_with_json_fallback(
     persona: Option<persona::ResolvedPersona>,
     text: &str,
 ) -> Result<String, RewriteError> {
-    match call_chat_completion(settings, mode, persona.clone(), text, OutputMode::Json).await {
+    if preferred_output_mode(settings) == OutputMode::Plain {
+        return call_chat_completion_with_retries(settings, mode, persona, text, OutputMode::Plain)
+            .await
+            .map_err(ProviderCallError::into_rewrite_error);
+    }
+
+    match call_chat_completion_with_retries(settings, mode, persona.clone(), text, OutputMode::Json)
+        .await
+    {
         Ok(output) => Ok(output),
         Err(error) if error.timeout => Err(RewriteError::Timeout),
         Err(error) if error.retry_plain => {
@@ -247,12 +261,44 @@ async fn call_chat_completion_with_json_fallback(
                 "[rewrite] JSON mode failed; retrying plain content mode: {}",
                 error.message
             );
-            call_chat_completion(settings, mode, persona, text, OutputMode::Plain)
+            call_chat_completion_with_retries(settings, mode, persona, text, OutputMode::Plain)
                 .await
                 .map_err(ProviderCallError::into_rewrite_error)
         }
         Err(error) => Err(error.into_rewrite_error()),
     }
+}
+
+async fn call_chat_completion_with_retries(
+    settings: &config::AppSettingsConfig,
+    mode: SelectionMode,
+    persona: Option<persona::ResolvedPersona>,
+    text: &str,
+    output_mode: OutputMode,
+) -> Result<String, ProviderCallError> {
+    let max_attempts = 2;
+
+    for attempt in 1..=max_attempts {
+        match call_chat_completion(settings, mode, persona.clone(), text, output_mode).await {
+            Ok(output) => return Ok(output),
+            Err(error)
+                if error.retry_same
+                    && !error.timeout
+                    && attempt < max_attempts
+                    && !error.retry_plain =>
+            {
+                println!(
+                    "[rewrite] provider {} mode attempt {attempt}/{max_attempts} failed; retrying: {}",
+                    output_mode.label(),
+                    error.message
+                );
+                tokio::time::sleep(Duration::from_millis(180)).await;
+            }
+            Err(error) => return Err(error),
+        }
+    }
+
+    unreachable!("provider retry loop always returns before exhausting attempts")
 }
 
 async fn call_chat_completion(
@@ -298,13 +344,15 @@ async fn call_chat_completion(
             if error.is_timeout() {
                 ProviderCallError::timeout()
             } else {
-                ProviderCallError::remote(format!("request failed: {error}"))
+                ProviderCallError::retryable_remote(format!("request failed: {error}"))
             }
         })?;
 
     let status = response.status();
     let body = response.bytes().await.map_err(|error| {
-        ProviderCallError::remote(format!("failed to read provider response body: {error}"))
+        ProviderCallError::retryable_remote(format!(
+            "failed to read provider response body: {error}"
+        ))
     })?;
 
     if !status.is_success() {
@@ -316,12 +364,14 @@ async fn call_chat_completion(
             ),
             retry_plain: matches!(output_mode, OutputMode::Json)
                 && response_format_may_be_unsupported(status.as_u16(), &body),
+            retry_same: response_status_is_transient(status.as_u16()),
             timeout: false,
+            invalid_response: false,
         });
     }
 
     let payload = serde_json::from_slice::<ChatCompletionResponse>(&body).map_err(|error| {
-        ProviderCallError::remote(format!(
+        ProviderCallError::retryable_invalid_response(format!(
             "failed to parse provider response JSON: {error}{}",
             provider_body_debug_suffix(&body)
         ))
@@ -342,7 +392,9 @@ async fn call_chat_completion(
         return Err(ProviderCallError {
             message: "provider returned an empty rewrite".to_string(),
             retry_plain: matches!(output_mode, OutputMode::Json),
+            retry_same: matches!(output_mode, OutputMode::Plain),
             timeout: false,
+            invalid_response: true,
         });
     }
 
@@ -415,7 +467,9 @@ impl ProviderCallError {
         Self {
             message: "request timed out".to_string(),
             retry_plain: false,
+            retry_same: false,
             timeout: true,
+            invalid_response: false,
         }
     }
 
@@ -423,13 +477,37 @@ impl ProviderCallError {
         Self {
             message,
             retry_plain: false,
+            retry_same: false,
             timeout: false,
+            invalid_response: false,
+        }
+    }
+
+    fn retryable_remote(message: String) -> Self {
+        Self {
+            message,
+            retry_plain: false,
+            retry_same: true,
+            timeout: false,
+            invalid_response: false,
+        }
+    }
+
+    fn retryable_invalid_response(message: String) -> Self {
+        Self {
+            message,
+            retry_plain: false,
+            retry_same: true,
+            timeout: false,
+            invalid_response: true,
         }
     }
 
     fn into_rewrite_error(self) -> RewriteError {
         if self.timeout {
             RewriteError::Timeout
+        } else if self.invalid_response {
+            RewriteError::InvalidResponse(self.message)
         } else {
             RewriteError::Remote(self.message)
         }
@@ -442,20 +520,32 @@ fn parse_structured_rewrite(content: &str) -> Result<String, ProviderCallError> 
         return Err(ProviderCallError {
             message: "provider returned empty JSON content".to_string(),
             retry_plain: true,
+            retry_same: false,
             timeout: false,
+            invalid_response: true,
         });
     }
 
+    parse_structured_rewrite_payload(content).map_err(|error| ProviderCallError {
+        message: format!(
+            "failed to parse rewrite JSON content: {error}{}",
+            provider_text_debug_suffix("content sample", content)
+        ),
+        retry_plain: true,
+        retry_same: false,
+        timeout: false,
+        invalid_response: true,
+    })
+}
+
+fn parse_structured_rewrite_payload(content: &str) -> Result<String, serde_json::Error> {
     serde_json::from_str::<StructuredRewriteContent>(content)
-        .map(|payload| payload.text.trim().to_string())
-        .map_err(|error| ProviderCallError {
-            message: format!(
-                "failed to parse rewrite JSON content: {error}{}",
-                provider_text_debug_suffix("content sample", content)
-            ),
-            retry_plain: true,
-            timeout: false,
+        .or_else(|_| {
+            extract_json_object(content)
+                .map(|json| serde_json::from_str::<StructuredRewriteContent>(json))
+                .unwrap_or_else(|| serde_json::from_str::<StructuredRewriteContent>(content))
         })
+        .map(|payload| payload.text.trim().to_string())
 }
 
 fn response_format_may_be_unsupported(status: u16, body: &str) -> bool {
@@ -469,6 +559,10 @@ fn response_format_may_be_unsupported(status: u16, body: &str) -> bool {
         || body.contains("unsupported")
         || body.contains("unknown")
         || body.contains("invalid")
+}
+
+fn response_status_is_transient(status: u16) -> bool {
+    matches!(status, 408 | 409 | 425 | 429 | 500 | 502 | 503 | 504)
 }
 
 fn provider_test_error_category(status: u16, body: &str) -> &'static str {
@@ -504,6 +598,21 @@ fn response_body_sample(body: &[u8]) -> String {
     } else {
         sample
     }
+}
+
+fn preferred_output_mode(settings: &config::AppSettingsConfig) -> OutputMode {
+    if json_mode_is_risky_for_provider(settings) {
+        OutputMode::Plain
+    } else {
+        OutputMode::Json
+    }
+}
+
+fn json_mode_is_risky_for_provider(settings: &config::AppSettingsConfig) -> bool {
+    let provider = settings.provider.trim().to_ascii_lowercase();
+    let base_url = settings.base_url.trim().to_ascii_lowercase();
+
+    provider == "deepseek" || base_url.contains("api.deepseek.com")
 }
 
 fn provider_body_debug_suffix(body: &[u8]) -> String {
@@ -558,6 +667,17 @@ fn starts_with_at(chars: &[char], index: usize, needle: &str) -> bool {
     })
 }
 
+fn extract_json_object(content: &str) -> Option<&str> {
+    let start = content.find('{')?;
+    let end = content.rfind('}')?;
+
+    if start >= end {
+        return None;
+    }
+
+    Some(&content[start..=end])
+}
+
 fn is_secret_delimiter(character: char) -> bool {
     character.is_whitespace()
         || matches!(
@@ -604,4 +724,92 @@ fn rewrite_messages(
             content: text.to_string(),
         },
     ]
+}
+
+impl OutputMode {
+    fn label(self) -> &'static str {
+        match self {
+            Self::Json => "JSON",
+            Self::Plain => "plain",
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{
+        config, parse_structured_rewrite, preferred_output_mode, OutputMode, ProviderCallError,
+    };
+
+    #[test]
+    fn preferred_output_mode_skips_json_for_deepseek_provider() {
+        let settings = config::AppSettingsConfig {
+            provider: "deepseek".to_string(),
+            base_url: "https://api.deepseek.com".to_string(),
+            ..config::AppSettingsConfig::default()
+        };
+
+        assert_eq!(preferred_output_mode(&settings), OutputMode::Plain);
+    }
+
+    #[test]
+    fn preferred_output_mode_skips_json_for_custom_deepseek_url() {
+        let settings = config::AppSettingsConfig {
+            provider: "custom".to_string(),
+            base_url: "https://api.deepseek.com".to_string(),
+            ..config::AppSettingsConfig::default()
+        };
+
+        assert_eq!(preferred_output_mode(&settings), OutputMode::Plain);
+    }
+
+    #[test]
+    fn preferred_output_mode_uses_json_for_generic_openai_compatible_provider() {
+        let settings = config::AppSettingsConfig {
+            provider: "openai".to_string(),
+            base_url: "https://api.openai.com/v1".to_string(),
+            ..config::AppSettingsConfig::default()
+        };
+
+        assert_eq!(preferred_output_mode(&settings), OutputMode::Json);
+    }
+
+    #[test]
+    fn parse_structured_rewrite_accepts_clean_json_payload() {
+        let output =
+            parse_structured_rewrite(r#"{"text":"专业技能"}"#).expect("clean JSON should parse");
+
+        assert_eq!(output, "专业技能");
+    }
+
+    #[test]
+    fn parse_structured_rewrite_accepts_json_wrapped_in_text() {
+        let output = parse_structured_rewrite(
+            "```json\n{\"text\":\"组织校内学术分享、职业规划讲座与跨院交流活动共 15 场\"}\n```",
+        )
+        .expect("wrapped JSON should parse");
+
+        assert_eq!(
+            output,
+            "组织校内学术分享、职业规划讲座与跨院交流活动共 15 场"
+        );
+    }
+
+    #[test]
+    fn parse_structured_rewrite_marks_empty_json_content_as_plain_retryable() {
+        let error = parse_structured_rewrite("").expect_err("empty content should fail");
+
+        assert_provider_error_flags(error, true, false, true);
+    }
+
+    fn assert_provider_error_flags(
+        error: ProviderCallError,
+        retry_plain: bool,
+        retry_same: bool,
+        invalid_response: bool,
+    ) {
+        assert_eq!(error.retry_plain, retry_plain);
+        assert_eq!(error.retry_same, retry_same);
+        assert_eq!(error.invalid_response, invalid_response);
+    }
 }
