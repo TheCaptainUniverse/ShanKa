@@ -35,6 +35,7 @@ const editablePreviewText = ref("");
 const undoCopying = ref(false);
 let unlistenHud: UnlistenFn | null = null;
 let unlistenFocus: UnlistenFn | null = null;
+let unlistenPersonas: UnlistenFn | null = null;
 
 const message = computed(() => t(hudMessageKey(currentHud.value)));
 
@@ -72,6 +73,12 @@ onMounted(() => {
     void syncLatestHudState();
   });
 
+  void listen<PersonaConfig>(TAURI_EVENTS.personasChanged, (event) => {
+    applyPersonaConfig(event.payload);
+  }).then((unlisten) => {
+    unlistenPersonas = unlisten;
+  });
+
   void hudWindow.onFocusChanged(({ payload: focused }) => {
     if (!focused) {
       void dismissPreview();
@@ -87,6 +94,7 @@ onMounted(() => {
 onUnmounted(() => {
   unlistenHud?.();
   unlistenFocus?.();
+  unlistenPersonas?.();
   window.removeEventListener("blur", handleWindowBlur);
   window.removeEventListener("keydown", handleKeydown);
 });
@@ -102,17 +110,21 @@ async function syncLatestHudState() {
 async function loadPersonaConfig() {
   try {
     const config = await invoke<PersonaConfig>("get_persona_config");
-    const enabledPersonas = config.items.filter((persona) => persona.enabled);
-    personaOptions.value = enabledPersonas.length > 0 ? enabledPersonas : BUILT_IN_PERSONAS.filter((persona) => persona.enabled);
-
-    if (!personaOptions.value.some((persona) => persona.id === selectedPersonaId.value)) {
-      selectedPersonaId.value =
-        personaOptions.value.find((persona) => persona.id === config.defaultSafePersonaId)?.id ??
-        personaOptions.value[0]?.id ??
-        DEFAULT_SAFE_PERSONA_ID;
-    }
+    applyPersonaConfig(config);
   } catch (error) {
     console.warn("[hud] failed to load persona config", error);
+  }
+}
+
+function applyPersonaConfig(config: PersonaConfig) {
+  const enabledPersonas = config.items.filter((persona) => persona.enabled);
+  personaOptions.value = enabledPersonas.length > 0 ? enabledPersonas : BUILT_IN_PERSONAS.filter((persona) => persona.enabled);
+
+  if (!personaOptions.value.some((persona) => persona.id === selectedPersonaId.value)) {
+    selectedPersonaId.value =
+      personaOptions.value.find((persona) => persona.id === config.defaultSafePersonaId)?.id ??
+      personaOptions.value[0]?.id ??
+      DEFAULT_SAFE_PERSONA_ID;
   }
 }
 

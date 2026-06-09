@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref } from "vue";
 import { invoke } from "@tauri-apps/api/core";
+import { emit } from "@tauri-apps/api/event";
 import {
   ChevronDown,
   Copy,
@@ -30,7 +31,13 @@ import {
 } from "@/settings/provider";
 import { useTheme } from "@/theme/useTheme";
 import type { Theme } from "@/theme/useTheme";
-import { BUILT_IN_PERSONAS, DEFAULT_SAFE_PERSONA_ID, type PersonaConfig, type PersonaDefinition } from "@shared";
+import {
+  BUILT_IN_PERSONAS,
+  DEFAULT_SAFE_PERSONA_ID,
+  TAURI_EVENTS,
+  type PersonaConfig,
+  type PersonaDefinition,
+} from "@shared";
 
 type SettingsTab = "general" | "personas" | "history" | "hotkeys" | "about";
 type HotkeyField = "safe_mode" | "magic_mode";
@@ -173,7 +180,9 @@ const personaErrorMessage = computed(() => (personaErrorKey.value ? t(personaErr
 const historyErrorMessage = computed(() => (historyErrorKey.value ? t(historyErrorKey.value) : ""));
 const enabledPersonaCount = computed(() => personaConfig.value.items.filter((persona) => persona.enabled).length);
 const canSavePersonas = computed(() => !personasLoading.value && !personasSaving.value && personasDirty.value);
-const canSubmitPersonaDraft = computed(() => Boolean(personaDraft.value) && !personaDraftGenerating.value);
+const canSubmitPersonaDraft = computed(
+  () => Boolean(personaDraft.value) && !personaDraftGenerating.value && !personasSaving.value,
+);
 const personaDraftMessage = computed(() => (personaDraftMessageKey.value ? t(personaDraftMessageKey.value) : ""));
 const personaDraftMessageClass = computed(() =>
   personaDraftMessageTone.value === "error" ? "text-red-500 dark:text-red-400" : "text-shanka-success",
@@ -420,6 +429,9 @@ async function savePersonas() {
     personasDirty.value = false;
     personaStatus.value = "saved";
     personaDraft.value = null;
+    void emit(TAURI_EVENTS.personasChanged, personaConfig.value).catch((eventError) => {
+      console.warn("[settings] failed to broadcast persona config change", eventError);
+    });
   } catch (error) {
     personaStatus.value = "error";
     personaErrorKey.value = formatPersonaError(error);
@@ -694,6 +706,7 @@ function submitPersonaDraft() {
   personaDraft.value = null;
   resetPersonaDraftState();
   markPersonasDirty();
+  void savePersonas();
 }
 
 function validatePersonaDraft(draft: PersonaDraft) {
@@ -729,6 +742,7 @@ function setDefaultPersona(personaId: string) {
 
   personaConfig.value.defaultSafePersonaId = personaId;
   markPersonasDirty();
+  void savePersonas();
 }
 
 function togglePersona(persona: PersonaDefinition) {
@@ -747,6 +761,7 @@ function togglePersona(persona: PersonaDefinition) {
   }
 
   markPersonasDirty();
+  void savePersonas();
 }
 
 function deletePersona(persona: PersonaDefinition) {
@@ -764,6 +779,7 @@ function deletePersona(persona: PersonaDefinition) {
   }
 
   markPersonasDirty();
+  void savePersonas();
 }
 
 async function startRecordingHotkey(field: HotkeyField) {
@@ -1205,7 +1221,7 @@ function personaDescription(persona: PersonaDefinition) {
                 </button>
                 <button
                   v-if="platformStatus?.settingsActionAvailable"
-                  class="inline-flex size-8 items-center justify-center rounded-md text-shanka-muted transition hover:bg-shanka-hover/5 hover:text-shanka-primary"
+                  class="inline-flex size-8 items-center justify-center rounded-md text-shanka-muted transition hover:bg-shanka-hover/5 hover:text-shanka-primary disabled:cursor-not-allowed disabled:opacity-40"
                   :title="t('settings.platform.openSettings')"
                   :aria-label="t('settings.platform.openSettings')"
                   type="button"
@@ -1425,7 +1441,7 @@ function personaDescription(persona: PersonaDefinition) {
             </div>
             <button
               class="inline-flex h-9 items-center gap-2 rounded-md border border-shanka-border px-3 text-sm text-shanka-secondary transition hover:bg-shanka-hover/5 hover:text-shanka-primary disabled:cursor-not-allowed disabled:opacity-60"
-              :disabled="personasLoading"
+              :disabled="personasLoading || personasSaving"
               type="button"
               @click="startCreatePersona"
             >
@@ -1568,7 +1584,7 @@ function personaDescription(persona: PersonaDefinition) {
                   class="inline-flex size-8 items-center justify-center rounded-md text-shanka-muted transition hover:bg-shanka-hover/5 hover:text-shanka-primary disabled:cursor-not-allowed disabled:opacity-40"
                   :title="t('settings.personas.setDefault')"
                   :aria-label="t('settings.personas.setDefault')"
-                  :disabled="!persona.enabled || persona.id === personaConfig.defaultSafePersonaId"
+                  :disabled="personasSaving || !persona.enabled || persona.id === personaConfig.defaultSafePersonaId"
                   type="button"
                   @click="setDefaultPersona(persona.id)"
                 >
@@ -1578,16 +1594,17 @@ function personaDescription(persona: PersonaDefinition) {
                   class="inline-flex size-8 items-center justify-center rounded-md text-shanka-muted transition hover:bg-shanka-hover/5 hover:text-shanka-primary disabled:cursor-not-allowed disabled:opacity-40"
                   :title="persona.enabled ? t('settings.personas.disable') : t('settings.personas.enable')"
                   :aria-label="persona.enabled ? t('settings.personas.disable') : t('settings.personas.enable')"
-                  :disabled="persona.enabled && enabledPersonaCount <= 1"
+                  :disabled="personasSaving || (persona.enabled && enabledPersonaCount <= 1)"
                   type="button"
                   @click="togglePersona(persona)"
                 >
                   <Power class="size-4" aria-hidden="true" />
                 </button>
                 <button
-                  class="inline-flex size-8 items-center justify-center rounded-md text-shanka-muted transition hover:bg-shanka-hover/5 hover:text-shanka-primary"
+                  class="inline-flex size-8 items-center justify-center rounded-md text-shanka-muted transition hover:bg-shanka-hover/5 hover:text-shanka-primary disabled:cursor-not-allowed disabled:opacity-40"
                   :title="t('settings.personas.copy')"
                   :aria-label="t('settings.personas.copy')"
+                  :disabled="personasSaving"
                   type="button"
                   @click="copyPersona(persona)"
                 >
@@ -1598,6 +1615,7 @@ function personaDescription(persona: PersonaDefinition) {
                   class="inline-flex size-8 items-center justify-center rounded-md text-shanka-muted transition hover:bg-shanka-hover/5 hover:text-shanka-primary"
                   :title="t('settings.personas.edit')"
                   :aria-label="t('settings.personas.edit')"
+                  :disabled="personasSaving"
                   type="button"
                   @click="startEditPersona(persona)"
                 >
@@ -1605,9 +1623,10 @@ function personaDescription(persona: PersonaDefinition) {
                 </button>
                 <button
                   v-if="!persona.builtIn"
-                  class="inline-flex size-8 items-center justify-center rounded-md text-shanka-muted transition hover:bg-shanka-hover/5 hover:text-shanka-danger"
+                  class="inline-flex size-8 items-center justify-center rounded-md text-shanka-muted transition hover:bg-shanka-hover/5 hover:text-shanka-danger disabled:cursor-not-allowed disabled:opacity-40"
                   :title="t('settings.personas.delete')"
                   :aria-label="t('settings.personas.delete')"
+                  :disabled="personasSaving"
                   type="button"
                   @click="deletePersona(persona)"
                 >
