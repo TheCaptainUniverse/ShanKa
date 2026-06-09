@@ -1,5 +1,8 @@
 use std::{
-    sync::atomic::{AtomicU64, Ordering},
+    sync::{
+        atomic::{AtomicU64, Ordering},
+        Mutex,
+    },
     thread,
     time::Duration,
 };
@@ -10,6 +13,10 @@ const HUD_WINDOW_LABEL: &str = "hud";
 const HUD_HIDE_DELAY: Duration = Duration::from_millis(2_200);
 
 static HUD_GENERATION: AtomicU64 = AtomicU64::new(0);
+static HUD_POSITION: Mutex<HudPositionState> = Mutex::new(HudPositionState {
+    anchor: None,
+    preview_position: None,
+});
 
 #[derive(Clone, Copy)]
 struct HudLayout {
@@ -17,6 +24,17 @@ struct HudLayout {
     height: f64,
     vertical_offset: f64,
     interactive: bool,
+}
+
+#[derive(Clone, Copy)]
+struct HudPoint {
+    x: f64,
+    y: f64,
+}
+
+struct HudPositionState {
+    anchor: Option<HudPoint>,
+    preview_position: Option<HudPoint>,
 }
 
 pub fn setup(app: &tauri::AppHandle) -> tauri::Result<()> {
@@ -29,6 +47,10 @@ pub fn setup(app: &tauri::AppHandle) -> tauri::Result<()> {
 pub fn present_hud(app: &tauri::AppHandle, status: &'static str) {
     let generation = HUD_GENERATION.fetch_add(1, Ordering::AcqRel) + 1;
     let layout = layout_for_status(status);
+
+    if status == "refining" {
+        begin_hud_position_session(app);
+    }
 
     if layout.interactive {
         crate::platform::remember_preview_target_window();
@@ -50,7 +72,7 @@ pub fn present_hud(app: &tauri::AppHandle, status: &'static str) {
             println!("[window] failed to update HUD click-through: {error}");
         }
 
-        if let Err(error) = position_hud_window(app, &window, layout) {
+        if let Err(error) = position_hud_window(app, &window, layout, status) {
             println!("[window] failed to position HUD window: {error}");
         }
 
@@ -142,13 +164,78 @@ fn position_hud_window(
     app: &tauri::AppHandle,
     window: &tauri::WebviewWindow,
     layout: HudLayout,
+    status: &str,
 ) -> tauri::Result<()> {
-    let cursor = app.cursor_position()?;
-    let position = clamped_hud_position(app, cursor.x, cursor.y, layout)?;
+    let position = hud_position_for_status(app, layout, status)?;
     window.set_position(tauri::PhysicalPosition::new(
-        position.0 as i32,
-        position.1 as i32,
+        position.x as i32,
+        position.y as i32,
     ))
+}
+
+fn begin_hud_position_session(app: &tauri::AppHandle) {
+    let anchor = app.cursor_position().ok().map(|cursor| HudPoint {
+        x: cursor.x,
+        y: cursor.y,
+    });
+
+    match HUD_POSITION.lock() {
+        Ok(mut state) => {
+            state.anchor = anchor;
+            state.preview_position = None;
+        }
+        Err(error) => {
+            println!("[window] failed to reset HUD position session: {error}");
+        }
+    }
+}
+
+fn hud_position_for_status(
+    app: &tauri::AppHandle,
+    layout: HudLayout,
+    status: &str,
+) -> tauri::Result<HudPoint> {
+    if status == "preview" {
+        if let Some(position) = locked_preview_position() {
+            return Ok(position);
+        }
+    }
+
+    let anchor = hud_anchor(app)?;
+    let position = clamped_hud_position(app, anchor.x, anchor.y, layout)?;
+
+    if status == "preview" {
+        remember_preview_position(position);
+    }
+
+    Ok(position)
+}
+
+fn locked_preview_position() -> Option<HudPoint> {
+    HUD_POSITION
+        .lock()
+        .ok()
+        .and_then(|state| state.preview_position)
+}
+
+fn remember_preview_position(position: HudPoint) {
+    if let Ok(mut state) = HUD_POSITION.lock() {
+        if state.preview_position.is_none() {
+            state.preview_position = Some(position);
+        }
+    }
+}
+
+fn hud_anchor(app: &tauri::AppHandle) -> tauri::Result<HudPoint> {
+    if let Some(anchor) = HUD_POSITION.lock().ok().and_then(|state| state.anchor) {
+        return Ok(anchor);
+    }
+
+    let cursor = app.cursor_position()?;
+    Ok(HudPoint {
+        x: cursor.x,
+        y: cursor.y,
+    })
 }
 
 fn clamped_hud_position(
@@ -156,7 +243,7 @@ fn clamped_hud_position(
     cursor_x: f64,
     cursor_y: f64,
     layout: HudLayout,
-) -> tauri::Result<(f64, f64)> {
+) -> tauri::Result<HudPoint> {
     let mut x = cursor_x - layout.width / 2.0;
     let mut y = cursor_y - layout.vertical_offset - layout.height;
 
@@ -171,7 +258,7 @@ fn clamped_hud_position(
         y = y.clamp(min_y, max_y.max(min_y));
     }
 
-    Ok((x, y))
+    Ok(HudPoint { x, y })
 }
 
 fn layout_for_status(status: &str) -> HudLayout {

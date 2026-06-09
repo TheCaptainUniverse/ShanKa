@@ -35,6 +35,7 @@ describe("shared contracts", () => {
   test("keeps Tauri event names stable", () => {
     expect(TAURI_EVENTS).toEqual({
       hudUpdate: "hud:update",
+      themeChanged: "theme:changed",
       refineStarted: "refine:started",
       refineFinished: "refine:finished",
     });

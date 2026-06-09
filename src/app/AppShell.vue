@@ -2,11 +2,13 @@
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import HudPill from "@/components/hud/HudPill.vue";
 import SettingsPanel from "@/components/settings/SettingsPanel.vue";
+import { useTheme } from "@/theme/useTheme";
 
 const currentWindowLabel = getCurrentWindow().label;
 const isHudWindow = currentWindowLabel === "hud";
 
 document.documentElement.dataset.window = currentWindowLabel;
+useTheme();
 </script>
 
 <template>
