@@ -261,13 +261,15 @@ pub fn generate_persona_draft(
         .map_err(|error| RewriteError::Config(error.to_string()))?;
     let locale = locale.unwrap_or_default();
 
-    if settings.can_use_remote_provider() {
-        return tauri::async_runtime::block_on(call_persona_generation_with_fallback(
-            &settings, &name, locale,
+    if !settings.can_use_remote_provider() {
+        return Err(RewriteError::Config(
+            "api_key, base_url, and model are required".to_string(),
         ));
     }
 
-    Ok(local_persona_draft(&name, locale))
+    tauri::async_runtime::block_on(call_persona_generation_with_fallback(
+        &settings, &name, locale,
+    ))
 }
 
 fn normalize_text(text: &str) -> String {
@@ -841,31 +843,6 @@ fn json_mode_is_risky_for_provider(settings: &config::AppSettingsConfig) -> bool
     provider == "deepseek" || base_url.contains("api.deepseek.com")
 }
 
-fn local_persona_draft(name: &str, locale: &str) -> GeneratedPersonaDraft {
-    if locale.to_ascii_lowercase().starts_with("zh") || contains_cjk(name) {
-        return GeneratedPersonaDraft {
-            description: format!("围绕“{name}”定制改写风格，保持表达自然、稳定并贴合使用场景。"),
-            system_prompt: format!(
-                "你是“{name}”人格。请根据这个人格改写用户选中的文本，在保留原意和语言的基础上优化表达、语气与结构。除非用户文本本身需要，否则不要添加无关信息。只返回改写后的文本。"
-            ),
-        };
-    }
-
-    GeneratedPersonaDraft {
-        description: format!(
-            "A {name} rewrite style that keeps the text natural, useful, and aligned with the intended context."
-        ),
-        system_prompt: format!(
-            "You are the \"{name}\" persona. Rewrite the user's selected text according to this persona while preserving the original intent and language. Improve wording, tone, and structure without adding unrelated information. Return only the rewritten text."
-        ),
-    }
-}
-
-fn contains_cjk(text: &str) -> bool {
-    text.chars()
-        .any(|character| ('\u{4e00}'..='\u{9fff}').contains(&character))
-}
-
 fn provider_body_debug_suffix(body: &[u8]) -> String {
     if !config::debug_logging_enabled() {
         return String::new();
@@ -1022,8 +999,8 @@ impl OutputMode {
 #[cfg(test)]
 mod tests {
     use super::{
-        config, local_persona_draft, parse_generated_persona_content, parse_structured_rewrite,
-        preferred_output_mode, OutputMode, ProviderCallError,
+        config, parse_generated_persona_content, parse_structured_rewrite, preferred_output_mode,
+        OutputMode, ProviderCallError,
     };
 
     #[test]
@@ -1096,14 +1073,6 @@ mod tests {
 
         assert_eq!(draft.description, "用于精简表达");
         assert_eq!(draft.system_prompt, "只返回改写后的文本。");
-    }
-
-    #[test]
-    fn local_persona_draft_uses_chinese_for_chinese_locale() {
-        let draft = local_persona_draft("简历润色", "zh-CN");
-
-        assert!(draft.description.contains("简历润色"));
-        assert!(draft.system_prompt.contains("只返回改写后的文本"));
     }
 
     fn assert_provider_error_flags(

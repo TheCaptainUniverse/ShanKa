@@ -32,7 +32,7 @@ import { useTheme } from "@/theme/useTheme";
 import type { Theme } from "@/theme/useTheme";
 import { BUILT_IN_PERSONAS, DEFAULT_SAFE_PERSONA_ID, type PersonaConfig, type PersonaDefinition } from "@shared";
 
-type SettingsTab = "general" | "personas" | "history" | "hotkeys";
+type SettingsTab = "general" | "personas" | "history" | "hotkeys" | "about";
 type HotkeyField = "safe_mode" | "magic_mode";
 type HotkeyConfig = {
   safe_mode: string;
@@ -97,6 +97,7 @@ const navItems = [
   { id: "personas", label: "settings.nav.personas" },
   { id: "history", label: "settings.nav.history" },
   { id: "hotkeys", label: "settings.nav.hotkeys" },
+  { id: "about", label: "settings.nav.about" },
 ] as const satisfies readonly { id: SettingsTab; label: TranslationKey }[];
 
 const selectedTab = ref<SettingsTab>("general");
@@ -150,6 +151,9 @@ const historyItems = ref<RewriteHistoryItem[]>([]);
 const historyLoading = ref(false);
 const historyStatus = ref<"idle" | "copied" | "cleared" | "error">("idle");
 const historyErrorKey = ref<TranslationKey | null>(null);
+const appVersion = ref("");
+const savedProviderSettingsSignature = ref("");
+const testedProviderSettingsSignature = ref("");
 
 const localeLabels = computed<Record<Locale, string>>(() => ({
   "zh-CN": t("settings.locale.zh"),
@@ -174,12 +178,31 @@ const personaDraftMessage = computed(() => (personaDraftMessageKey.value ? t(per
 const personaDraftMessageClass = computed(() =>
   personaDraftMessageTone.value === "error" ? "text-red-500 dark:text-red-400" : "text-shanka-success",
 );
+const currentProviderSettingsSignature = computed(() => providerSettingsSignature(appSettings.value));
+const providerSettingsDirty = computed(
+  () => currentProviderSettingsSignature.value !== savedProviderSettingsSignature.value,
+);
+const currentProviderSettingsTested = computed(
+  () =>
+    providerTestStatus.value === "success" &&
+    testedProviderSettingsSignature.value === currentProviderSettingsSignature.value,
+);
+const aiSettingsConfigured = computed(
+  () =>
+    (appSettings.value.api_key.trim() !== "" || appSettings.value.api_key_ref.trim() !== "") &&
+    appSettings.value.base_url.trim() !== "" &&
+    appSettings.value.model.trim() !== "",
+);
+const aiSettingsAvailableForGeneration = computed(
+  () => aiSettingsConfigured.value && !providerSettingsDirty.value,
+);
 
 const canSaveSettings = computed(
   () =>
     !settingsLoading.value &&
     !settingsSaving.value &&
-    appSettings.value.base_url.trim() !== "",
+    appSettings.value.base_url.trim() !== "" &&
+    (!providerSettingsDirty.value || currentProviderSettingsTested.value),
 );
 const canTestProvider = computed(
   () =>
@@ -200,12 +223,21 @@ const canSaveHotkeys = computed(
 );
 
 onMounted(() => {
+  void loadAppVersion();
   void loadAppSettings();
   void loadHotkeys();
   void loadPersonas();
   void loadPlatformStatus();
   void loadHistory();
 });
+
+async function loadAppVersion() {
+  try {
+    appVersion.value = await invoke<string>("app_version");
+  } catch (error) {
+    console.warn("[settings] failed to load app version", error);
+  }
+}
 
 onUnmounted(() => {
   void stopRecordingHotkey();
@@ -239,6 +271,8 @@ async function loadAppSettings() {
       api_key: "",
       api_key_ref: loadedSettings.api_key_ref ?? "",
     };
+    savedProviderSettingsSignature.value = providerSettingsSignature(appSettings.value);
+    testedProviderSettingsSignature.value = "";
     settingsDirty.value = false;
     settingsStatus.value = "idle";
   } catch (error) {
@@ -307,6 +341,12 @@ async function loadHistory() {
 }
 
 async function saveAppSettings() {
+  if (providerSettingsDirty.value && !currentProviderSettingsTested.value) {
+    settingsStatus.value = "error";
+    settingsErrorKey.value = "settings.general.providerTestRequired";
+    return;
+  }
+
   if (!canSaveSettings.value) {
     return;
   }
@@ -324,6 +364,7 @@ async function saveAppSettings() {
       api_key: "",
       api_key_ref: savedSettings.api_key_ref ?? appSettings.value.api_key_ref,
     };
+    savedProviderSettingsSignature.value = providerSettingsSignature(appSettings.value);
     settingsDirty.value = false;
     settingsStatus.value = "saved";
   } catch (error) {
@@ -350,6 +391,7 @@ async function testProviderConnection() {
       settings: appSettingsPayload(),
     });
     providerTestStatus.value = "success";
+    testedProviderSettingsSignature.value = currentProviderSettingsSignature.value;
   } catch (error) {
     providerTestStatus.value = "error";
     providerTestErrorKey.value = formatProviderTestError(error);
@@ -455,10 +497,15 @@ function markHotkeysDirty() {
   }
 }
 
-function markSettingsDirty() {
+function markSettingsDirty(resetProviderTest: boolean | Event = true) {
+  const shouldResetProviderTest = resetProviderTest !== false;
+
   settingsDirty.value = true;
-  providerTestStatus.value = "idle";
-  providerTestErrorKey.value = null;
+  if (shouldResetProviderTest) {
+    providerTestStatus.value = "idle";
+    providerTestErrorKey.value = null;
+    testedProviderSettingsSignature.value = "";
+  }
   if (settingsStatus.value === "saved") {
     settingsStatus.value = "idle";
   }
@@ -476,6 +523,17 @@ function appSettingsPayload(): AppSettingsConfig {
     history_enabled: appSettings.value.history_enabled,
     launch_at_login: appSettings.value.launch_at_login,
   };
+}
+
+function providerSettingsSignature(settings: AppSettingsConfig) {
+  return [
+    settings.provider.trim() || "custom",
+    settings.api_key.trim(),
+    settings.api_key_ref.trim(),
+    settings.base_url.trim(),
+    settings.model.trim(),
+    String(Math.round(settings.timeout_ms)),
+  ].join("\n");
 }
 
 function applyProviderPreset(providerId: string) {
@@ -540,6 +598,11 @@ async function generatePersonaDraft() {
     showPersonaDraftMessage("settings.personas.aiNameRequired", "error");
     return;
   }
+  if (!aiSettingsAvailableForGeneration.value) {
+    showPersonaDraftMessage("settings.personas.aiSettingsRequired", "error");
+    openAiSettingsForPersonaGeneration();
+    return;
+  }
 
   if (draft.item.description.trim() || draft.item.systemPrompt.trim()) {
     const shouldOverwrite = window.confirm(t("settings.personas.aiOverwriteConfirm"));
@@ -576,6 +639,14 @@ async function generatePersonaDraft() {
       personaDraftGenerating.value = false;
     }
   }
+}
+
+function openAiSettingsForPersonaGeneration() {
+  selectedTab.value = "general";
+  settingsStatus.value = "error";
+  settingsErrorKey.value = "settings.general.aiRequiredForPersona";
+  providerTestStatus.value = "error";
+  providerTestErrorKey.value = "settings.providerTest.missing";
 }
 
 function resetPersonaDraftState() {
@@ -1055,7 +1126,7 @@ function personaDescription(persona: PersonaDefinition) {
 
 <template>
   <section class="mx-auto grid min-h-screen max-w-5xl grid-cols-[220px_1fr]">
-    <aside class="border-r border-shanka-border px-3 py-5">
+    <aside class="sticky top-0 h-screen self-start overflow-y-auto border-r border-shanka-border px-3 py-5">
       <div class="mb-5 px-2 text-sm font-medium text-shanka-primary">{{ t("app.name") }}</div>
       <nav class="space-y-1">
         <button
@@ -1261,7 +1332,7 @@ function personaDescription(persona: PersonaDefinition) {
               class="size-4 accent-shanka-primary"
               :disabled="settingsLoading"
               type="checkbox"
-              @change="markSettingsDirty"
+              @change="markSettingsDirty(false)"
             />
           </label>
 
@@ -1275,7 +1346,7 @@ function personaDescription(persona: PersonaDefinition) {
               class="size-4 accent-shanka-primary"
               :disabled="settingsLoading"
               type="checkbox"
-              @change="markSettingsDirty"
+              @change="markSettingsDirty(false)"
             />
           </label>
 
@@ -1289,7 +1360,7 @@ function personaDescription(persona: PersonaDefinition) {
               class="size-4 accent-shanka-primary"
               :disabled="settingsLoading"
               type="checkbox"
-              @change="markSettingsDirty"
+              @change="markSettingsDirty(false)"
             />
           </label>
 
@@ -1327,6 +1398,9 @@ function personaDescription(persona: PersonaDefinition) {
             </p>
             <p v-else-if="settingsStatus === 'saved'" class="text-xs text-shanka-success">
               {{ t("settings.general.saved") }}
+            </p>
+            <p v-else-if="providerSettingsDirty && !currentProviderSettingsTested" class="text-xs text-shanka-muted">
+              {{ t("settings.general.providerTestRequiredHint") }}
             </p>
             <p v-else class="text-xs text-shanka-muted">
               {{ t("settings.general.mockFallback") }}
@@ -1645,7 +1719,7 @@ function personaDescription(persona: PersonaDefinition) {
           </div>
         </div>
 
-        <form v-else class="mt-6 space-y-5" @submit.prevent="saveHotkeys">
+        <form v-else-if="selectedTab === 'hotkeys'" class="mt-6 space-y-5" @submit.prevent="saveHotkeys">
           <div class="space-y-2">
             <div class="text-sm text-shanka-secondary">{{ t("settings.hotkeys.safeMode") }}</div>
             <div class="flex gap-2">
@@ -1716,6 +1790,32 @@ function personaDescription(persona: PersonaDefinition) {
             </button>
           </div>
         </form>
+
+        <div v-else-if="selectedTab === 'about'" class="mt-6 space-y-5">
+          <section class="rounded-md border border-shanka-border px-3 py-3">
+            <div class="text-sm font-medium text-shanka-primary">{{ t("settings.about.title") }}</div>
+            <p class="mt-2 text-sm leading-6 text-shanka-secondary">{{ t("settings.about.description") }}</p>
+            <div class="mt-4 grid gap-2 text-sm">
+              <div class="flex items-center justify-between gap-4">
+                <span class="text-shanka-muted">{{ t("settings.about.version") }}</span>
+                <span class="text-shanka-primary">{{ appVersion || "0.1.0" }}</span>
+              </div>
+              <div class="flex items-start justify-between gap-4">
+                <span class="text-shanka-muted">{{ t("settings.about.safeMode") }}</span>
+                <span class="max-w-sm text-right text-shanka-secondary">{{ t("settings.about.safeModeDescription") }}</span>
+              </div>
+              <div class="flex items-start justify-between gap-4">
+                <span class="text-shanka-muted">{{ t("settings.about.magicMode") }}</span>
+                <span class="max-w-sm text-right text-shanka-secondary">{{ t("settings.about.magicModeDescription") }}</span>
+              </div>
+            </div>
+          </section>
+
+          <section class="rounded-md border border-shanka-border px-3 py-3">
+            <div class="text-sm font-medium text-shanka-primary">{{ t("settings.about.privacyTitle") }}</div>
+            <p class="mt-2 text-sm leading-6 text-shanka-secondary">{{ t("settings.about.privacy") }}</p>
+          </section>
+        </div>
       </div>
     </section>
   </section>
