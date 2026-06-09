@@ -107,6 +107,16 @@ fn test_provider_connection(settings: config::AppSettingsConfig) -> Result<(), S
 }
 
 #[tauri::command]
+fn generate_persona_draft(
+    app: tauri::AppHandle,
+    name: String,
+    locale: Option<String>,
+) -> Result<rewrite::GeneratedPersonaDraft, String> {
+    rewrite::generate_persona_draft(&app, &name, locale.as_deref())
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
 fn save_persona_config(
     app: tauri::AppHandle,
     personas: persona::PersonaConfig,
@@ -192,6 +202,7 @@ pub fn run() {
             copy_last_replacement_original,
             save_app_settings,
             test_provider_connection,
+            generate_persona_draft,
             save_hotkey_config,
             save_persona_config,
             set_hotkey_recording_active,

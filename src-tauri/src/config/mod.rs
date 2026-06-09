@@ -291,6 +291,17 @@ impl AppSettingsConfig {
 fn normalized_personas(
     personas: &persona::PersonaConfig,
 ) -> Result<persona::PersonaConfig, ConfigError> {
+    if personas.items.iter().any(|item| {
+        !item.built_in
+            && (item.name.trim().is_empty()
+                || item.description.trim().is_empty()
+                || item.system_prompt.trim().is_empty())
+    }) {
+        return Err(ConfigError::InvalidPersonas(
+            "name, description, and system prompt are required".to_string(),
+        ));
+    }
+
     let normalized = persona::normalize_config(personas);
 
     if normalized.items.is_empty() {
@@ -420,7 +431,10 @@ fn to_tauri_error(error: ConfigError) -> tauri::Error {
 
 #[cfg(test)]
 mod tests {
-    use super::{config_dir_override_from_value, AppSettingsConfig, HotkeyConfig};
+    use super::{
+        config_dir_override_from_value, normalized_personas, AppSettingsConfig, HotkeyConfig,
+    };
+    use crate::persona::{PersonaConfig, PersonaConfigItem};
     use std::{ffi::OsString, path::PathBuf};
 
     #[test]
@@ -466,6 +480,27 @@ mod tests {
         assert_eq!(normalized.model, "deepseek-v4-flash");
         assert_eq!(normalized.timeout_ms, 1_000);
         assert!(normalized.launch_at_login);
+    }
+
+    #[test]
+    fn normalized_personas_rejects_incomplete_custom_fields() {
+        let personas = PersonaConfig {
+            items: vec![PersonaConfigItem {
+                id: "custom-test".to_string(),
+                name: "Test".to_string(),
+                description: String::new(),
+                system_prompt: "Rewrite as Test.".to_string(),
+                enabled: true,
+                ..PersonaConfigItem::default()
+            }],
+            ..PersonaConfig::default()
+        };
+
+        let error = normalized_personas(&personas).expect_err("missing description should fail");
+
+        assert!(error
+            .to_string()
+            .contains("name, description, and system prompt are required"));
     }
 
     #[test]

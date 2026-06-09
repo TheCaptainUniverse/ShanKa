@@ -21,6 +21,13 @@ pub struct RewriteResponse {
     pub duration: Duration,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GeneratedPersonaDraft {
+    pub description: String,
+    pub system_prompt: String,
+}
+
 #[derive(Debug)]
 pub enum RewriteError {
     Config(String),
@@ -91,6 +98,13 @@ struct ChatCompletionMessage {
 #[derive(Deserialize)]
 struct StructuredRewriteContent {
     text: String,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct GeneratedPersonaContent {
+    description: String,
+    system_prompt: String,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -229,6 +243,33 @@ pub fn test_provider_connection(settings: config::AppSettingsConfig) -> Result<(
     tauri::async_runtime::block_on(call_provider_connection_test(&settings))
 }
 
+pub fn generate_persona_draft(
+    app: &tauri::AppHandle,
+    name: &str,
+    locale: Option<&str>,
+) -> Result<GeneratedPersonaDraft, RewriteError> {
+    let name = normalize_text(name);
+    if name.is_empty() {
+        return Err(RewriteError::EmptyInput);
+    }
+
+    let config =
+        config::load_or_create(app).map_err(|error| RewriteError::Config(error.to_string()))?;
+    let settings = config
+        .settings
+        .with_resolved_api_key()
+        .map_err(|error| RewriteError::Config(error.to_string()))?;
+    let locale = locale.unwrap_or_default();
+
+    if settings.can_use_remote_provider() {
+        return tauri::async_runtime::block_on(call_persona_generation_with_fallback(
+            &settings, &name, locale,
+        ));
+    }
+
+    Ok(local_persona_draft(&name, locale))
+}
+
 fn normalize_text(text: &str) -> String {
     text.trim_matches('\0')
         .lines()
@@ -269,6 +310,33 @@ async fn call_chat_completion_with_json_fallback(
     }
 }
 
+async fn call_persona_generation_with_fallback(
+    settings: &config::AppSettingsConfig,
+    name: &str,
+    locale: &str,
+) -> Result<GeneratedPersonaDraft, RewriteError> {
+    if preferred_output_mode(settings) == OutputMode::Plain {
+        return call_persona_generation_with_retries(settings, name, locale, OutputMode::Plain)
+            .await
+            .map_err(ProviderCallError::into_rewrite_error);
+    }
+
+    match call_persona_generation_with_retries(settings, name, locale, OutputMode::Json).await {
+        Ok(output) => Ok(output),
+        Err(error) if error.timeout => Err(RewriteError::Timeout),
+        Err(error) if error.retry_plain => {
+            println!(
+                "[rewrite] persona JSON mode failed; retrying plain content mode: {}",
+                error.message
+            );
+            call_persona_generation_with_retries(settings, name, locale, OutputMode::Plain)
+                .await
+                .map_err(ProviderCallError::into_rewrite_error)
+        }
+        Err(error) => Err(error.into_rewrite_error()),
+    }
+}
+
 async fn call_chat_completion_with_retries(
     settings: &config::AppSettingsConfig,
     mode: SelectionMode,
@@ -299,6 +367,37 @@ async fn call_chat_completion_with_retries(
     }
 
     unreachable!("provider retry loop always returns before exhausting attempts")
+}
+
+async fn call_persona_generation_with_retries(
+    settings: &config::AppSettingsConfig,
+    name: &str,
+    locale: &str,
+    output_mode: OutputMode,
+) -> Result<GeneratedPersonaDraft, ProviderCallError> {
+    let max_attempts = 2;
+
+    for attempt in 1..=max_attempts {
+        match call_persona_generation(settings, name, locale, output_mode).await {
+            Ok(output) => return Ok(output),
+            Err(error)
+                if error.retry_same
+                    && !error.timeout
+                    && attempt < max_attempts
+                    && !error.retry_plain =>
+            {
+                println!(
+                    "[rewrite] provider persona {} mode attempt {attempt}/{max_attempts} failed; retrying: {}",
+                    output_mode.label(),
+                    error.message
+                );
+                tokio::time::sleep(Duration::from_millis(180)).await;
+            }
+            Err(error) => return Err(error),
+        }
+    }
+
+    unreachable!("provider persona retry loop always returns before exhausting attempts")
 }
 
 async fn call_chat_completion(
@@ -399,6 +498,118 @@ async fn call_chat_completion(
     }
 
     Ok(output)
+}
+
+async fn call_persona_generation(
+    settings: &config::AppSettingsConfig,
+    name: &str,
+    locale: &str,
+    output_mode: OutputMode,
+) -> Result<GeneratedPersonaDraft, ProviderCallError> {
+    let client = reqwest::Client::builder()
+        .timeout(Duration::from_millis(settings.timeout_ms))
+        .build()
+        .map_err(|error| {
+            ProviderCallError::remote(format!("failed to create HTTP client: {error}"))
+        })?;
+    let endpoint = format!(
+        "{}/chat/completions",
+        settings.base_url.trim_end_matches('/')
+    );
+
+    let response = client
+        .post(endpoint)
+        .bearer_auth(&settings.api_key)
+        .header(header::ACCEPT_ENCODING, "identity")
+        .json(&ChatCompletionRequest {
+            model: settings.model.clone(),
+            messages: persona_generation_messages(name, locale, output_mode),
+            temperature: 0.35,
+            max_tokens: 512,
+            response_format: match output_mode {
+                OutputMode::Json => Some(ResponseFormat {
+                    kind: "json_object",
+                }),
+                OutputMode::Plain => None,
+            },
+        })
+        .send()
+        .await
+        .map_err(|error| {
+            if error.is_timeout() {
+                ProviderCallError::timeout()
+            } else {
+                ProviderCallError::retryable_remote(format!("request failed: {error}"))
+            }
+        })?;
+
+    let status = response.status();
+    let body = response.bytes().await.map_err(|error| {
+        ProviderCallError::retryable_remote(format!(
+            "failed to read provider response body: {error}"
+        ))
+    })?;
+
+    if !status.is_success() {
+        let body = response_body_sample(&body);
+        return Err(ProviderCallError {
+            message: format!(
+                "provider returned HTTP {status}{}",
+                provider_text_debug_suffix("body sample", &body)
+            ),
+            retry_plain: matches!(output_mode, OutputMode::Json)
+                && response_format_may_be_unsupported(status.as_u16(), &body),
+            retry_same: response_status_is_transient(status.as_u16()),
+            timeout: false,
+            invalid_response: false,
+        });
+    }
+
+    let payload = serde_json::from_slice::<ChatCompletionResponse>(&body).map_err(|error| {
+        ProviderCallError::retryable_invalid_response(format!(
+            "failed to parse provider response JSON: {error}{}",
+            provider_body_debug_suffix(&body)
+        ))
+    })?;
+    let content = payload
+        .choices
+        .first()
+        .and_then(|choice| choice.message.content.as_deref())
+        .map(|content| content.trim().to_string())
+        .unwrap_or_default();
+
+    if content.is_empty() {
+        return Err(ProviderCallError {
+            message: "provider returned empty persona content".to_string(),
+            retry_plain: matches!(output_mode, OutputMode::Json),
+            retry_same: matches!(output_mode, OutputMode::Plain),
+            timeout: false,
+            invalid_response: true,
+        });
+    }
+
+    let draft = parse_generated_persona_content(&content).map_err(|error| ProviderCallError {
+        message: format!(
+            "failed to parse generated persona JSON content: {error}{}",
+            provider_text_debug_suffix("content sample", &content)
+        ),
+        retry_plain: matches!(output_mode, OutputMode::Json),
+        retry_same: false,
+        timeout: false,
+        invalid_response: true,
+    })?;
+
+    if draft.description.trim().is_empty() || draft.system_prompt.trim().is_empty() {
+        return Err(ProviderCallError {
+            message: "provider returned incomplete persona draft".to_string(),
+            retry_plain: matches!(output_mode, OutputMode::Json),
+            retry_same: matches!(output_mode, OutputMode::Plain),
+            timeout: false,
+            invalid_response: true,
+        });
+    }
+
+    Ok(draft)
 }
 
 async fn call_provider_connection_test(
@@ -548,6 +759,21 @@ fn parse_structured_rewrite_payload(content: &str) -> Result<String, serde_json:
         .map(|payload| payload.text.trim().to_string())
 }
 
+fn parse_generated_persona_content(
+    content: &str,
+) -> Result<GeneratedPersonaDraft, serde_json::Error> {
+    serde_json::from_str::<GeneratedPersonaContent>(content)
+        .or_else(|_| {
+            extract_json_object(content)
+                .map(|json| serde_json::from_str::<GeneratedPersonaContent>(json))
+                .unwrap_or_else(|| serde_json::from_str::<GeneratedPersonaContent>(content))
+        })
+        .map(|payload| GeneratedPersonaDraft {
+            description: payload.description.trim().to_string(),
+            system_prompt: payload.system_prompt.trim().to_string(),
+        })
+}
+
 fn response_format_may_be_unsupported(status: u16, body: &str) -> bool {
     if status != 400 && status != 422 {
         return false;
@@ -613,6 +839,31 @@ fn json_mode_is_risky_for_provider(settings: &config::AppSettingsConfig) -> bool
     let base_url = settings.base_url.trim().to_ascii_lowercase();
 
     provider == "deepseek" || base_url.contains("api.deepseek.com")
+}
+
+fn local_persona_draft(name: &str, locale: &str) -> GeneratedPersonaDraft {
+    if locale.to_ascii_lowercase().starts_with("zh") || contains_cjk(name) {
+        return GeneratedPersonaDraft {
+            description: format!("围绕“{name}”定制改写风格，保持表达自然、稳定并贴合使用场景。"),
+            system_prompt: format!(
+                "你是“{name}”人格。请根据这个人格改写用户选中的文本，在保留原意和语言的基础上优化表达、语气与结构。除非用户文本本身需要，否则不要添加无关信息。只返回改写后的文本。"
+            ),
+        };
+    }
+
+    GeneratedPersonaDraft {
+        description: format!(
+            "A {name} rewrite style that keeps the text natural, useful, and aligned with the intended context."
+        ),
+        system_prompt: format!(
+            "You are the \"{name}\" persona. Rewrite the user's selected text according to this persona while preserving the original intent and language. Improve wording, tone, and structure without adding unrelated information. Return only the rewritten text."
+        ),
+    }
+}
+
+fn contains_cjk(text: &str) -> bool {
+    text.chars()
+        .any(|character| ('\u{4e00}'..='\u{9fff}').contains(&character))
 }
 
 fn provider_body_debug_suffix(body: &[u8]) -> String {
@@ -726,6 +977,39 @@ fn rewrite_messages(
     ]
 }
 
+fn persona_generation_messages(
+    name: &str,
+    locale: &str,
+    output_mode: OutputMode,
+) -> Vec<ChatMessage> {
+    let language_instruction = if locale.to_ascii_lowercase().starts_with("zh") {
+        "Write the description and systemPrompt in Simplified Chinese."
+    } else {
+        "Write the description and systemPrompt in English unless the persona name is clearly in another language."
+    };
+    let json_instruction = match output_mode {
+        OutputMode::Json => {
+            "Return only valid JSON in this exact shape: {\"description\":\"short user-facing description\",\"systemPrompt\":\"system prompt for rewriting selected text\"}. Do not include markdown, comments, or extra keys."
+        }
+        OutputMode::Plain => {
+            "Return only JSON in this exact shape: {\"description\":\"short user-facing description\",\"systemPrompt\":\"system prompt for rewriting selected text\"}. Do not include markdown, comments, or extra keys."
+        }
+    };
+
+    vec![
+        ChatMessage {
+            role: "system",
+            content: format!(
+                "You design reusable rewrite personas for Shanka, a desktop selected-text refinement app. {language_instruction} The description should be one concise sentence. The systemPrompt should tell the model how to rewrite selected text for this persona, preserve the user's meaning and language, avoid unrelated additions, and return only the rewritten text. {json_instruction}"
+            ),
+        },
+        ChatMessage {
+            role: "user",
+            content: format!("Persona name: {name}"),
+        },
+    ]
+}
+
 impl OutputMode {
     fn label(self) -> &'static str {
         match self {
@@ -738,7 +1022,8 @@ impl OutputMode {
 #[cfg(test)]
 mod tests {
     use super::{
-        config, parse_structured_rewrite, preferred_output_mode, OutputMode, ProviderCallError,
+        config, local_persona_draft, parse_generated_persona_content, parse_structured_rewrite,
+        preferred_output_mode, OutputMode, ProviderCallError,
     };
 
     #[test]
@@ -800,6 +1085,25 @@ mod tests {
         let error = parse_structured_rewrite("").expect_err("empty content should fail");
 
         assert_provider_error_flags(error, true, false, true);
+    }
+
+    #[test]
+    fn parse_generated_persona_content_accepts_wrapped_json_payload() {
+        let draft = parse_generated_persona_content(
+            "```json\n{\"description\":\"用于精简表达\",\"systemPrompt\":\"只返回改写后的文本。\"}\n```",
+        )
+        .expect("wrapped generated persona JSON should parse");
+
+        assert_eq!(draft.description, "用于精简表达");
+        assert_eq!(draft.system_prompt, "只返回改写后的文本。");
+    }
+
+    #[test]
+    fn local_persona_draft_uses_chinese_for_chinese_locale() {
+        let draft = local_persona_draft("简历润色", "zh-CN");
+
+        assert!(draft.description.contains("简历润色"));
+        assert!(draft.system_prompt.contains("只返回改写后的文本"));
     }
 
     fn assert_provider_error_flags(

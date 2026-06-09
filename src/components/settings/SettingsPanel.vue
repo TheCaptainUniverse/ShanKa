@@ -2,15 +2,18 @@
 import { computed, onMounted, onUnmounted, ref } from "vue";
 import { invoke } from "@tauri-apps/api/core";
 import {
+  ChevronDown,
   Copy,
   ExternalLink,
   Keyboard,
+  LoaderCircle,
   Pencil,
   Plus,
   Power,
   RefreshCw,
   Save,
   ShieldCheck,
+  Sparkles,
   Star,
   Sun,
   Moon,
@@ -80,6 +83,11 @@ type PersonaDraft = {
   originalId: string | null;
   item: PersonaDefinition;
 };
+type GeneratedPersonaDraft = {
+  description: string;
+  systemPrompt: string;
+};
+type PersonaDraftMessageTone = "error" | "success";
 
 const { locale, locales, setLocale, t } = useI18n();
 const { setTheme, theme, themes } = useTheme();
@@ -134,6 +142,10 @@ const personasDirty = ref(false);
 const personaStatus = ref<PersonaStatus>("idle");
 const personaErrorKey = ref<TranslationKey | null>(null);
 const personaDraft = ref<PersonaDraft | null>(null);
+const personaDraftGenerating = ref(false);
+const personaDraftMessageKey = ref<TranslationKey | null>(null);
+const personaDraftMessageTone = ref<PersonaDraftMessageTone>("success");
+const personaSystemPromptOpen = ref(false);
 const historyItems = ref<RewriteHistoryItem[]>([]);
 const historyLoading = ref(false);
 const historyStatus = ref<"idle" | "copied" | "cleared" | "error">("idle");
@@ -157,10 +169,11 @@ const personaErrorMessage = computed(() => (personaErrorKey.value ? t(personaErr
 const historyErrorMessage = computed(() => (historyErrorKey.value ? t(historyErrorKey.value) : ""));
 const enabledPersonaCount = computed(() => personaConfig.value.items.filter((persona) => persona.enabled).length);
 const canSavePersonas = computed(() => !personasLoading.value && !personasSaving.value && personasDirty.value);
-const canSubmitPersonaDraft = computed(() => {
-  const draft = personaDraft.value;
-  return Boolean(draft?.item.name.trim() && draft.item.systemPrompt.trim());
-});
+const canSubmitPersonaDraft = computed(() => Boolean(personaDraft.value) && !personaDraftGenerating.value);
+const personaDraftMessage = computed(() => (personaDraftMessageKey.value ? t(personaDraftMessageKey.value) : ""));
+const personaDraftMessageClass = computed(() =>
+  personaDraftMessageTone.value === "error" ? "text-red-500 dark:text-red-400" : "text-shanka-success",
+);
 
 const canSaveSettings = computed(
   () =>
@@ -349,6 +362,11 @@ async function savePersonas() {
   if (!canSavePersonas.value) {
     return;
   }
+  if (hasIncompletePersonaFields(personaConfig.value.items)) {
+    personaStatus.value = "error";
+    personaErrorKey.value = "settings.personas.fieldsRequired";
+    return;
+  }
 
   personasSaving.value = true;
   personaErrorKey.value = null;
@@ -478,8 +496,7 @@ function startCreatePersona() {
     originalId: null,
     item: createCustomPersona(),
   };
-  personaStatus.value = "idle";
-  personaErrorKey.value = null;
+  resetPersonaDraftState();
 }
 
 function startEditPersona(persona: PersonaDefinition) {
@@ -492,8 +509,7 @@ function startEditPersona(persona: PersonaDefinition) {
     originalId: persona.id,
     item: clonePersona(persona),
   };
-  personaStatus.value = "idle";
-  personaErrorKey.value = null;
+  resetPersonaDraftState();
 }
 
 function copyPersona(persona: PersonaDefinition) {
@@ -510,24 +526,85 @@ function copyPersona(persona: PersonaDefinition) {
       enabled: true,
     },
   };
+  resetPersonaDraftState();
+}
+
+async function generatePersonaDraft() {
+  const draft = personaDraft.value;
+  if (!draft || personaDraftGenerating.value) {
+    return;
+  }
+
+  const name = draft.item.name.trim();
+  if (!name) {
+    showPersonaDraftMessage("settings.personas.aiNameRequired", "error");
+    return;
+  }
+
+  if (draft.item.description.trim() || draft.item.systemPrompt.trim()) {
+    const shouldOverwrite = window.confirm(t("settings.personas.aiOverwriteConfirm"));
+    if (!shouldOverwrite) {
+      return;
+    }
+  }
+
+  personaDraftGenerating.value = true;
+  personaDraftMessageKey.value = null;
   personaStatus.value = "idle";
   personaErrorKey.value = null;
+
+  try {
+    const generated = await invoke<GeneratedPersonaDraft>("generate_persona_draft", {
+      name,
+      locale: locale.value,
+    });
+
+    if (personaDraft.value !== draft) {
+      return;
+    }
+
+    draft.item.description = generated.description.trim();
+    draft.item.systemPrompt = generated.systemPrompt.trim();
+    showPersonaDraftMessage("settings.personas.aiGenerated", "success");
+  } catch (error) {
+    console.warn("[settings] failed to generate persona draft", error);
+    if (personaDraft.value === draft) {
+      showPersonaDraftMessage("settings.personas.aiGenerateFailed", "error");
+    }
+  } finally {
+    if (personaDraft.value === draft) {
+      personaDraftGenerating.value = false;
+    }
+  }
+}
+
+function resetPersonaDraftState() {
+  personaStatus.value = "idle";
+  personaErrorKey.value = null;
+  personaDraftGenerating.value = false;
+  personaDraftMessageKey.value = null;
+  personaDraftMessageTone.value = "success";
+  personaSystemPromptOpen.value = false;
 }
 
 function cancelPersonaDraft() {
   personaDraft.value = null;
+  resetPersonaDraftState();
 }
 
 function submitPersonaDraft() {
   const draft = personaDraft.value;
-  if (!draft || !canSubmitPersonaDraft.value) {
+  if (!draft || personaDraftGenerating.value) {
+    return;
+  }
+  if (!validatePersonaDraft(draft)) {
     return;
   }
 
   const item = {
     ...draft.item,
     name: draft.item.name.trim(),
-    description: draft.item.description?.trim() ?? "",
+    description: draft.item.description.trim(),
     systemPrompt: draft.item.systemPrompt.trim(),
     nameKey: "",
     descriptionKey: "",
@@ -544,7 +621,34 @@ function submitPersonaDraft() {
   }
 
   personaDraft.value = null;
+  resetPersonaDraftState();
   markPersonasDirty();
+}
+
+function validatePersonaDraft(draft: PersonaDraft) {
+  if (
+    !draft.item.name.trim() ||
+    !draft.item.description.trim() ||
+    !draft.item.systemPrompt.trim()
+  ) {
+    showPersonaDraftMessage("settings.personas.fieldsRequired", "error");
+    return false;
+  }
+
+  return true;
+}
+
+function showPersonaDraftMessage(key: TranslationKey, tone: PersonaDraftMessageTone) {
+  personaDraftMessageKey.value = key;
+  personaDraftMessageTone.value = tone;
+}
+
+function clearPersonaDraftMessage() {
+  personaDraftMessageKey.value = null;
+}
+
+function onPersonaSystemPromptToggle(event: Event) {
+  personaSystemPromptOpen.value = (event.currentTarget as HTMLDetailsElement).open;
 }
 
 function setDefaultPersona(personaId: string) {
@@ -824,6 +928,18 @@ function sanitizedPersonaConfig(): PersonaConfig {
   };
 }
 
+function hasIncompletePersonaFields(items: PersonaDefinition[]) {
+  return items.some((persona) => !personaRequiredFieldsComplete(persona));
+}
+
+function personaRequiredFieldsComplete(persona: PersonaDefinition) {
+  const hasName = Boolean(persona.name.trim() || persona.nameKey.trim());
+  const hasDescription = Boolean((persona.description ?? "").trim() || persona.descriptionKey.trim());
+  const hasSystemPrompt = Boolean(persona.systemPrompt.trim());
+
+  return hasName && hasDescription && hasSystemPrompt;
+}
+
 function createCustomPersona(): PersonaDefinition {
   return {
     id: createPersonaId(),
@@ -920,6 +1036,9 @@ function formatPersonaError(error: unknown): TranslationKey {
 
   if (message.includes("at least one enabled persona")) {
     return "settings.personas.needEnabled";
+  }
+  if (message.includes("name, description, and system prompt")) {
+    return "settings.personas.fieldsRequired";
   }
 
   return "settings.personas.unknownError";
@@ -1267,11 +1386,25 @@ function personaDescription(persona: PersonaDefinition) {
 
             <label class="block">
               <span class="mb-2 block text-sm text-shanka-secondary">{{ t("settings.personas.name") }}</span>
-              <input
-                v-model.trim="personaDraft.item.name"
-                class="h-10 w-full rounded-md border border-transparent bg-shanka-input px-3 text-sm text-shanka-primary outline-none transition focus:border-shanka-focus"
-                type="text"
-              />
+              <div class="flex gap-2">
+                <input
+                  v-model.trim="personaDraft.item.name"
+                  class="h-10 min-w-0 flex-1 rounded-md border border-transparent bg-shanka-input px-3 text-sm text-shanka-primary outline-none transition focus:border-shanka-focus"
+                  type="text"
+                  @input="clearPersonaDraftMessage"
+                />
+                <button
+                  class="inline-flex size-10 shrink-0 items-center justify-center rounded-md border border-shanka-border text-shanka-muted transition hover:bg-shanka-hover/5 hover:text-shanka-primary disabled:cursor-not-allowed disabled:opacity-50"
+                  :title="t('settings.personas.aiGenerate')"
+                  :aria-label="t('settings.personas.aiGenerate')"
+                  :disabled="personaDraftGenerating"
+                  type="button"
+                  @click="generatePersonaDraft"
+                >
+                  <LoaderCircle v-if="personaDraftGenerating" class="size-4 animate-spin" aria-hidden="true" />
+                  <Sparkles v-else class="size-4" aria-hidden="true" />
+                </button>
+              </div>
             </label>
 
             <label class="block">
@@ -1280,16 +1413,29 @@ function personaDescription(persona: PersonaDefinition) {
                 v-model.trim="personaDraft.item.description"
                 class="h-10 w-full rounded-md border border-transparent bg-shanka-input px-3 text-sm text-shanka-primary outline-none transition focus:border-shanka-focus"
                 type="text"
+                @input="clearPersonaDraftMessage"
               />
             </label>
 
-            <label class="block">
-              <span class="mb-2 block text-sm text-shanka-secondary">{{ t("settings.personas.systemPrompt") }}</span>
+            <details
+              class="group rounded-md border border-shanka-border"
+              :open="personaSystemPromptOpen"
+              @toggle="onPersonaSystemPromptToggle"
+            >
+              <summary class="flex h-10 cursor-pointer list-none items-center justify-between gap-3 px-3 text-sm text-shanka-secondary [&::-webkit-details-marker]:hidden">
+                <span>{{ t("settings.personas.systemPrompt") }}</span>
+                <ChevronDown class="size-4 text-shanka-muted transition group-open:rotate-180" aria-hidden="true" />
+              </summary>
               <textarea
                 v-model.trim="personaDraft.item.systemPrompt"
-                class="h-28 w-full resize-none rounded-md border border-transparent bg-shanka-input px-3 py-2 text-sm text-shanka-primary outline-none transition focus:border-shanka-focus"
+                class="h-28 w-full resize-none border-t border-shanka-border bg-transparent px-3 py-2 text-sm text-shanka-primary outline-none transition focus:bg-shanka-input/50"
+                @input="clearPersonaDraftMessage"
               />
-            </label>
+            </details>
+
+            <p v-if="personaDraftMessage" class="text-xs" :class="personaDraftMessageClass">
+              {{ personaDraftMessage }}
+            </p>
 
             <div class="flex justify-end">
               <button
