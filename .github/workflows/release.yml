@@ -110,11 +110,13 @@ jobs:
         run: bun run release:msi-smoke
 
       - name: Generate release manifest
+        id: release_manifest
         if: startsWith(matrix.platform, 'windows-')
+        continue-on-error: true
         run: bun run release:manifest
 
       - name: Upload release manifest
-        if: startsWith(matrix.platform, 'windows-')
+        if: startsWith(matrix.platform, 'windows-') && steps.release_manifest.outcome == 'success'
         uses: actions/upload-artifact@v4
         with:
           name: shanka-release-manifest
