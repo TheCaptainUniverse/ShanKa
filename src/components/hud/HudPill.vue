@@ -5,6 +5,7 @@ import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { Check, ChevronDown, Copy, LoaderCircle, RefreshCw, Replace, Search, Undo2, X } from "lucide-vue-next";
 import { useI18n } from "@/i18n/useI18n";
+import { personaDisplayName } from "@/personas/display";
 import {
   hudErrorMessageKey,
   hudMessageKey,
@@ -21,7 +22,6 @@ import {
   type PersonaConfig,
   type PersonaDefinition,
 } from "@shared";
-import type { TranslationKey } from "@/i18n/messages";
 
 const { t } = useI18n();
 const { currentHud, setHud } = useHud();
@@ -175,7 +175,7 @@ async function runPreviewAction(action: PreviewAction, personaId = selectedPerso
 }
 
 function personaLabel(persona: PersonaDefinition) {
-  return persona.name.trim() || (persona.nameKey ? t(persona.nameKey as TranslationKey) : "");
+  return personaDisplayName(persona, t);
 }
 
 function selectPersona(personaId: string) {

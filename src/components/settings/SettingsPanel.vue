@@ -29,6 +29,12 @@ import {
   PROVIDER_PRESETS as providerPresets,
   providerTestErrorKey as mapProviderTestErrorKey,
 } from "@/settings/provider";
+import {
+  personaDisplayDescription,
+  personaDisplayName,
+  personaStorageDescription,
+  personaStorageName,
+} from "@/personas/display";
 import { useTheme } from "@/theme/useTheme";
 import type { Theme } from "@/theme/useTheme";
 import {
@@ -571,6 +577,10 @@ function startCreatePersona() {
 }
 
 function startEditPersona(persona: PersonaDefinition) {
+  if (persona.builtIn) {
+    return;
+  }
+
   personaDraft.value = {
     mode: "edit",
     originalId: persona.id,
@@ -580,13 +590,15 @@ function startEditPersona(persona: PersonaDefinition) {
 }
 
 function copyPersona(persona: PersonaDefinition) {
+  const name = personaName(persona);
+
   personaDraft.value = {
     mode: "create",
     originalId: null,
     item: {
       ...clonePersona(persona),
-      id: createPersonaId(persona.name),
-      name: `${personaName(persona)} ${t("settings.personas.copySuffix")}`,
+      id: createPersonaId(name),
+      name: `${name} ${t("settings.personas.copySuffix")}`,
       nameKey: "",
       descriptionKey: "",
       builtIn: false,
@@ -996,8 +1008,8 @@ function sanitizedPersonaConfig(): PersonaConfig {
   const items = personaConfig.value.items.map((persona) => ({
     ...persona,
     id: persona.id.trim(),
-    name: persona.name.trim(),
-    description: persona.description?.trim() ?? "",
+    name: personaStorageName(persona),
+    description: personaStorageDescription(persona),
     nameKey: persona.nameKey.trim(),
     descriptionKey: persona.descriptionKey.trim(),
     systemPrompt: persona.systemPrompt.trim(),
@@ -1141,11 +1153,11 @@ function formatPersonaError(error: unknown): TranslationKey {
 }
 
 function personaName(persona: PersonaDefinition) {
-  return persona.name.trim() || (persona.nameKey ? t(persona.nameKey as TranslationKey) : "");
+  return personaDisplayName(persona, t);
 }
 
 function personaDescription(persona: PersonaDefinition) {
-  return (persona.description ?? "").trim() || (persona.descriptionKey ? t(persona.descriptionKey as TranslationKey) : "");
+  return personaDisplayDescription(persona, t);
 }
 </script>
 
@@ -1623,6 +1635,7 @@ function personaDescription(persona: PersonaDefinition) {
                   <Copy class="size-4" aria-hidden="true" />
                 </button>
                 <button
+                  v-if="!persona.builtIn"
                   class="inline-flex size-8 items-center justify-center rounded-md text-shanka-muted transition hover:bg-shanka-hover/5 hover:text-shanka-primary"
                   :title="t('settings.personas.edit')"
                   :aria-label="t('settings.personas.edit')"

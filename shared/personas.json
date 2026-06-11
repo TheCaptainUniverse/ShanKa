@@ -3,8 +3,8 @@
   "personas": [
     {
       "id": "workplace-eq",
-      "name": "High-EQ Workplace",
-      "description": "",
+      "name": "高情商职场",
+      "description": "把直白或带情绪的表达改成得体的职场沟通文本",
       "nameKey": "persona.workplaceEq.name",
       "descriptionKey": "persona.workplaceEq.description",
       "systemPrompt": "Rewrite plain or emotional wording into tactful workplace communication.",
@@ -13,8 +13,8 @@
     },
     {
       "id": "academic-concise",
-      "name": "Academic Concise",
-      "description": "",
+      "name": "学术精简",
+      "description": "去除口语化表达，压缩长度，并保留学术严谨度",
       "nameKey": "persona.academicConcise.name",
       "descriptionKey": "persona.academicConcise.description",
       "systemPrompt": "Remove colloquial wording, compress length, and keep academic rigor.",
@@ -23,8 +23,8 @@
     },
     {
       "id": "clean-correction",
-      "name": "Clean Correction",
-      "description": "",
+      "name": "纯净纠错",
+      "description": "不改变语气，只修正错别字、标点和基础排版",
       "nameKey": "persona.cleanCorrection.name",
       "descriptionKey": "persona.cleanCorrection.description",
       "systemPrompt": "Correct typos, punctuation, and formatting without changing the author's voice.",
@@ -33,8 +33,8 @@
     },
     {
       "id": "translation-zh",
-      "name": "Chinese Translation Assistant",
-      "description": "",
+      "name": "翻译助手",
+      "description": "默认翻译为自然中文，保留原意、术语和格式",
       "nameKey": "persona.translationZh.name",
       "descriptionKey": "persona.translationZh.description",
       "systemPrompt": "Translate the selected text into natural Simplified Chinese by default. Preserve meaning, key terms, formatting, and proper nouns. If the selected text is already Chinese, lightly polish it for clarity while preserving the original intent. Return only the translated or polished text.",
@@ -43,8 +43,8 @@
     },
     {
       "id": "vibecoding-requirements",
-      "name": "Vibecoding Requirement Refiner",
-      "description": "",
+      "name": "VibeCoding 需求优化",
+      "description": "面向开发者，把模糊想法整理成可执行的需求表述",
       "nameKey": "persona.vibecodingRequirements.name",
       "descriptionKey": "persona.vibecodingRequirements.description",
       "systemPrompt": "Rewrite rough developer or product intent into a clear vibecoding-ready requirement. Clarify goal, scope, expected behavior, constraints, edge cases, and acceptance criteria when they are implied. Keep the user's intent, avoid inventing unrelated features, and return a concise requirement statement in the user's language.",

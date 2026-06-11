@@ -3,12 +3,18 @@ import {
   BUILT_IN_PERSONAS,
   DEFAULT_SAFE_PERSONA_ID,
   ENABLED_PERSONAS,
+  type PersonaDefinition,
   resolvePersonaDefinition,
 } from "../shared";
-import { DEFAULT_LOCALE, LOCALES, messages } from "../src/i18n/messages";
+import { personaDisplayName, personaStorageName } from "../src/personas/display";
+import { DEFAULT_LOCALE, LOCALES, messages, type TranslationKey } from "../src/i18n/messages";
 
 function keysFor(locale: (typeof LOCALES)[number]) {
   return Object.keys(messages[locale]).sort();
+}
+
+function zh(key: TranslationKey) {
+  return messages["zh-CN"][key];
 }
 
 describe("i18n catalog", () => {
@@ -72,6 +78,28 @@ describe("persona catalog", () => {
           `${locale}:${persona.descriptionKey}`,
         ).toBeDefined();
       }
+    }
+  });
+
+  test("uses Chinese as the built-in persona catalog default", () => {
+    for (const persona of BUILT_IN_PERSONAS) {
+      expect(persona.name).toBe(messages[DEFAULT_LOCALE][persona.nameKey]);
+      expect(persona.description).toBe(messages[DEFAULT_LOCALE][persona.descriptionKey]);
+    }
+  });
+
+  test("localizes built-in personas with legacy English config names", () => {
+    const legacyNames: Record<string, string> = {
+      "translation-zh": "Chinese Translation Assistant",
+      "vibecoding-requirements": "Vibecoding Requirement Refiner",
+    };
+
+    for (const [personaId, legacyName] of Object.entries(legacyNames)) {
+      const persona = BUILT_IN_PERSONAS.find((item) => item.id === personaId) as PersonaDefinition;
+      const legacyPersona = { ...persona, name: legacyName };
+
+      expect(personaDisplayName(legacyPersona, zh)).toBe(messages["zh-CN"][persona.nameKey]);
+      expect(personaStorageName(legacyPersona)).toBe(messages["zh-CN"][persona.nameKey]);
     }
   });
 });

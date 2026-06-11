@@ -174,9 +174,8 @@ fn normalized_built_in_persona(
     configured: &PersonaConfigItem,
     built_in: &PersonaConfigItem,
 ) -> PersonaConfigItem {
-    let mut persona = configured.clone();
-    persona.id = built_in.id.clone();
-    persona.built_in = true;
+    let mut persona = built_in.clone();
+    persona.enabled = configured.enabled;
     persona
 }
 
@@ -243,14 +242,14 @@ mod tests {
     use super::{normalize_config, resolve_persona, PersonaConfig, PersonaConfigItem};
 
     #[test]
-    fn normalize_config_preserves_built_in_user_edits() {
+    fn normalize_config_resets_built_in_user_edits() {
         let config = PersonaConfig {
             items: vec![PersonaConfigItem {
                 id: "clean-correction".to_string(),
                 name: "Changed".to_string(),
                 description: "Changed description".to_string(),
                 system_prompt: "Changed prompt".to_string(),
-                enabled: true,
+                enabled: false,
                 built_in: true,
                 ..PersonaConfigItem::default()
             }],
@@ -264,9 +263,16 @@ mod tests {
             .find(|persona| persona.id == "clean-correction")
             .expect("built-in clean correction persona should exist");
 
-        assert_eq!(clean.name, "Changed");
-        assert_eq!(clean.description, "Changed description");
-        assert_eq!(clean.system_prompt, "Changed prompt");
+        assert_eq!(clean.name, "纯净纠错");
+        assert_eq!(
+            clean.description,
+            "不改变语气，只修正错别字、标点和基础排版"
+        );
+        assert_eq!(
+            clean.system_prompt,
+            "Correct typos, punctuation, and formatting without changing the author's voice."
+        );
+        assert!(!clean.enabled);
         assert!(clean.built_in);
     }
 
