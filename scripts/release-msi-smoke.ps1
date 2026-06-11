@@ -367,11 +367,11 @@ function Invoke-MsiInstallSmoke {
   New-Item -ItemType Directory -Force -Path $tempRoot, $logDir | Out-Null
 
   $shortcutCandidates = @(
-    Join-Path ([Environment]::GetFolderPath("Desktop")) "Shanka.lnk",
-    Join-Path ([Environment]::GetFolderPath("CommonDesktopDirectory")) "Shanka.lnk",
-    Join-Path ([Environment]::GetFolderPath("Programs")) "Shanka\Shanka.lnk",
-    Join-Path ([Environment]::GetFolderPath("CommonPrograms")) "Shanka\Shanka.lnk",
-    Join-Path $installDir "Uninstall Shanka.lnk"
+    (Join-Path ([Environment]::GetFolderPath("Desktop")) "Shanka.lnk")
+    (Join-Path ([Environment]::GetFolderPath("CommonDesktopDirectory")) "Shanka.lnk")
+    (Join-Path ([Environment]::GetFolderPath("Programs")) "Shanka\Shanka.lnk")
+    (Join-Path ([Environment]::GetFolderPath("CommonPrograms")) "Shanka\Shanka.lnk")
+    (Join-Path $installDir "Uninstall Shanka.lnk")
   )
   $backupDir = Join-Path $tempRoot "ShortcutBackup"
   $backups = @()
@@ -404,13 +404,13 @@ function Invoke-MsiInstallSmoke {
     Write-Host "[release-msi-smoke] installed executable OK: $($installedExeItem.FullName) ($($installedExeItem.Length) bytes)"
 
     Assert-AnyShortcutTarget -ShortcutPaths @(
-      Join-Path ([Environment]::GetFolderPath("Programs")) "Shanka\Shanka.lnk",
-      Join-Path ([Environment]::GetFolderPath("CommonPrograms")) "Shanka\Shanka.lnk"
+      (Join-Path ([Environment]::GetFolderPath("Programs")) "Shanka\Shanka.lnk")
+      (Join-Path ([Environment]::GetFolderPath("CommonPrograms")) "Shanka\Shanka.lnk")
     ) -ExpectedTarget $installedExe -Label "Start menu"
 
     Assert-AnyShortcutTarget -ShortcutPaths @(
-      Join-Path ([Environment]::GetFolderPath("Desktop")) "Shanka.lnk",
-      Join-Path ([Environment]::GetFolderPath("CommonDesktopDirectory")) "Shanka.lnk"
+      (Join-Path ([Environment]::GetFolderPath("Desktop")) "Shanka.lnk")
+      (Join-Path ([Environment]::GetFolderPath("CommonDesktopDirectory")) "Shanka.lnk")
     ) -ExpectedTarget $installedExe -Label "Desktop"
 
     $appProcess = Start-Process -FilePath $installedExe -WorkingDirectory $installDir -PassThru -WindowStyle Hidden

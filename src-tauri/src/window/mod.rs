@@ -175,20 +175,24 @@ fn create_hud_window(app: &tauri::AppHandle) -> tauri::Result<()> {
         return Ok(());
     }
 
-    let window =
+    let builder =
         WebviewWindowBuilder::new(app, HUD_WINDOW_LABEL, WebviewUrl::App("index.html".into()))
             .title("Shanka HUD")
             .inner_size(180.0, 52.0)
             .resizable(false)
-            .decorations(false)
-            .transparent(true)
-            .shadow(false)
-            .always_on_top(true)
-            .skip_taskbar(true)
-            .focusable(false)
-            .focused(false)
-            .visible(false)
-            .build()?;
+            .decorations(false);
+
+    #[cfg(not(target_os = "macos"))]
+    let builder = builder.transparent(true);
+
+    let window = builder
+        .shadow(false)
+        .always_on_top(true)
+        .skip_taskbar(true)
+        .focusable(false)
+        .focused(false)
+        .visible(false)
+        .build()?;
 
     if let Ok(icon) = crate::app_icon::load() {
         if let Err(error) = window.set_icon(icon) {
