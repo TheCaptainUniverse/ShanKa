@@ -92,7 +92,7 @@ jobs:
           tagName: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
           releaseName: "Shanka ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}"
           releaseBody: "Cross-platform Shanka desktop packages. This release is unsigned unless noted otherwise."
-          releaseDraft: true
+          releaseDraft: false
           prerelease: ${{ github.event_name == 'workflow_dispatch' && inputs.prerelease || false }}
           tauriScript: bun run tauri
           args: ${{ matrix.args }}

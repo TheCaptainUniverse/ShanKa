@@ -45,7 +45,7 @@ configuration stores only a key reference, not the plaintext key.
 
 The recommended release path is GitHub Actions. Push a version tag and
 `.github/workflows/release.yml` builds on Windows, Linux, and macOS runners,
-then uploads the packages to a GitHub Draft Release:
+then uploads the packages to a GitHub Release:
 
 ```bash
 git tag v0.1.0

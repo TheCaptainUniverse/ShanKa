@@ -39,7 +39,7 @@ API Key 会尽量保存到系统密钥链。应用配置只保存密钥引用，
 
 推荐使用 GitHub Actions 生成跨平台发布包。推送版本 tag 后，
 `.github/workflows/release.yml` 会在 Windows、Linux 和 macOS runner 上分别构建，
-并把产物上传到 GitHub Draft Release：
+并把产物上传到 GitHub Release：
 
 ```bash
 git tag v0.1.0
