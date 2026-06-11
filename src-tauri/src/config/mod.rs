@@ -205,11 +205,20 @@ pub fn save_settings(
         keychain::store_api_key(&settings.api_key).map_err(ConfigError::InvalidSettings)?
     };
     settings.api_key.clear();
-    autostart::set_enabled(app, settings.launch_at_login).map_err(ConfigError::InvalidSettings)?;
+    settings.launch_at_login =
+        autostart::is_enabled(app).unwrap_or(config.settings.launch_at_login);
     config.settings = settings;
     save_app_config_at(&config_path(app)?, &config)?;
     apply_runtime_flags(&config);
     Ok(public_settings(config.settings))
+}
+
+pub fn save_launch_at_login(app: &tauri::AppHandle, enabled: bool) -> Result<bool, ConfigError> {
+    let applied = autostart::set_enabled(app, enabled).map_err(ConfigError::InvalidSettings)?;
+    let mut config = load_or_create(app)?;
+    config.settings.launch_at_login = applied;
+    save_app_config_at(&config_path(app)?, &config)?;
+    Ok(applied)
 }
 
 pub fn save_personas(

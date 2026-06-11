@@ -73,6 +73,7 @@ type AppSettingsConfig = {
   launch_at_login: boolean;
 };
 type AppSettingsStatus = "idle" | "saved" | "error";
+type LaunchAtLoginStatus = "idle" | "saved" | "error";
 type ProviderTestStatus = "idle" | "success" | "error";
 type PersonaStatus = "idle" | "saved" | "error";
 type PlatformCapability = {
@@ -139,6 +140,9 @@ const settingsSaving = ref(false);
 const settingsDirty = ref(false);
 const settingsStatus = ref<AppSettingsStatus>("idle");
 const settingsErrorKey = ref<TranslationKey | null>(null);
+const launchAtLoginSaving = ref(false);
+const launchAtLoginStatus = ref<LaunchAtLoginStatus>("idle");
+const launchAtLoginErrorKey = ref<TranslationKey | null>(null);
 const platformStatus = ref<PlatformStatus | null>(null);
 const platformLoading = ref(false);
 const platformErrorKey = ref<TranslationKey | null>(null);
@@ -192,6 +196,9 @@ const themeLabels = computed<Record<Theme, string>>(() => ({
 }));
 
 const settingsErrorMessage = computed(() => (settingsErrorKey.value ? t(settingsErrorKey.value) : ""));
+const launchAtLoginErrorMessage = computed(() =>
+  launchAtLoginErrorKey.value ? t(launchAtLoginErrorKey.value) : "",
+);
 const platformErrorMessage = computed(() => (platformErrorKey.value ? t(platformErrorKey.value) : ""));
 const providerTestErrorMessage = computed(() => (providerTestErrorKey.value ? t(providerTestErrorKey.value) : ""));
 const hotkeyErrorMessage = computed(() => (hotkeyErrorKey.value ? t(hotkeyErrorKey.value) : ""));
@@ -232,6 +239,7 @@ const canSaveSettings = computed(
     appSettings.value.base_url.trim() !== "" &&
     (!providerSettingsDirty.value || currentProviderSettingsTested.value),
 );
+const canToggleLaunchAtLogin = computed(() => !settingsLoading.value && !launchAtLoginSaving.value);
 const canTestProvider = computed(
   () =>
     !settingsLoading.value &&
@@ -303,6 +311,8 @@ async function loadAppSettings() {
     testedProviderSettingsSignature.value = "";
     settingsDirty.value = false;
     settingsStatus.value = "idle";
+    launchAtLoginStatus.value = "idle";
+    launchAtLoginErrorKey.value = null;
   } catch (error) {
     settingsStatus.value = "error";
     settingsErrorKey.value = formatSettingsError(error);
@@ -412,6 +422,31 @@ async function saveAppSettings() {
     settingsErrorKey.value = formatSettingsError(error);
   } finally {
     settingsSaving.value = false;
+  }
+}
+
+async function updateLaunchAtLogin() {
+  if (!canToggleLaunchAtLogin.value) {
+    return;
+  }
+
+  const desired = appSettings.value.launch_at_login;
+  launchAtLoginSaving.value = true;
+  launchAtLoginStatus.value = "idle";
+  launchAtLoginErrorKey.value = null;
+
+  try {
+    const applied = await invoke<boolean>("set_launch_at_login", {
+      enabled: desired,
+    });
+    appSettings.value.launch_at_login = applied;
+    launchAtLoginStatus.value = "saved";
+  } catch (error) {
+    appSettings.value.launch_at_login = !desired;
+    launchAtLoginStatus.value = "error";
+    launchAtLoginErrorKey.value = formatSettingsError(error);
+  } finally {
+    launchAtLoginSaving.value = false;
   }
 }
 
@@ -1418,13 +1453,23 @@ function personaDescription(persona: PersonaDefinition) {
             <span>
               <span class="block text-sm text-shanka-secondary">{{ t("settings.field.launchAtLogin") }}</span>
               <span class="mt-1 block text-xs text-shanka-muted">{{ t("settings.general.launchAtLoginHint") }}</span>
+              <span v-if="launchAtLoginSaving" class="mt-1 inline-flex items-center gap-1.5 text-xs text-shanka-muted">
+                <LoaderCircle class="size-3 animate-spin" aria-hidden="true" />
+                {{ t("settings.general.launchAtLoginSaving") }}
+              </span>
+              <span v-else-if="launchAtLoginStatus === 'saved'" class="mt-1 block text-xs text-shanka-success">
+                {{ t("settings.general.launchAtLoginSaved") }}
+              </span>
+              <span v-else-if="launchAtLoginStatus === 'error'" class="mt-1 block text-xs text-red-500 dark:text-red-400">
+                {{ launchAtLoginErrorMessage }}
+              </span>
             </span>
             <input
               v-model="appSettings.launch_at_login"
               class="size-4 accent-shanka-primary"
-              :disabled="settingsLoading"
+              :disabled="!canToggleLaunchAtLogin"
               type="checkbox"
-              @change="markSettingsDirty(false)"
+              @change="updateLaunchAtLogin"
             />
           </label>
 

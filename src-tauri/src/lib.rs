@@ -103,6 +103,11 @@ fn save_app_settings(
 }
 
 #[tauri::command]
+fn set_launch_at_login(app: tauri::AppHandle, enabled: bool) -> Result<bool, String> {
+    config::save_launch_at_login(&app, enabled).map_err(|error| error.to_string())
+}
+
+#[tauri::command]
 fn test_provider_connection(settings: config::AppSettingsConfig) -> Result<(), String> {
     rewrite::test_provider_connection(settings).map_err(|error| error.to_string())
 }
@@ -192,6 +197,11 @@ pub fn run() {
             rewrite::setup(handle)?;
             hotkey::setup(handle)?;
             bridge::setup(handle)?;
+            if autostart::started_from_autostart() {
+                println!("[autostart] started from launch-at-login; settings window stays hidden");
+            } else {
+                window::show_settings_window(handle);
+            }
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -207,6 +217,7 @@ pub fn run() {
             copy_history_result,
             copy_last_replacement_original,
             save_app_settings,
+            set_launch_at_login,
             test_provider_connection,
             generate_persona_draft,
             save_hotkey_config,
