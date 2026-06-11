@@ -39,7 +39,18 @@ describe("persona catalog", () => {
       "workplace-eq",
       "academic-concise",
       "clean-correction",
+      "translation-zh",
+      "vibecoding-requirements",
     ]);
+  });
+
+  test("includes developer and translation helper personas", () => {
+    expect(BUILT_IN_PERSONAS.find((persona) => persona.id === "translation-zh")?.systemPrompt).toContain(
+      "Simplified Chinese",
+    );
+    expect(BUILT_IN_PERSONAS.find((persona) => persona.id === "vibecoding-requirements")?.systemPrompt).toContain(
+      "vibecoding-ready requirement",
+    );
   });
 
   test("uses an enabled built-in persona as the Safe Mode default", () => {

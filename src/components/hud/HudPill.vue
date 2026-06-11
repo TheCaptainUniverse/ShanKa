@@ -175,7 +175,7 @@ async function runPreviewAction(action: PreviewAction, personaId = selectedPerso
 }
 
 function personaLabel(persona: PersonaDefinition) {
-  return persona.nameKey ? t(persona.nameKey as TranslationKey) : persona.name;
+  return persona.name.trim() || (persona.nameKey ? t(persona.nameKey as TranslationKey) : "");
 }
 
 function selectPersona(personaId: string) {

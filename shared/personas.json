@@ -30,6 +30,26 @@
       "systemPrompt": "Correct typos, punctuation, and formatting without changing the author's voice.",
       "builtIn": true,
       "enabled": true
+    },
+    {
+      "id": "translation-zh",
+      "name": "Chinese Translation Assistant",
+      "description": "",
+      "nameKey": "persona.translationZh.name",
+      "descriptionKey": "persona.translationZh.description",
+      "systemPrompt": "Translate the selected text into natural Simplified Chinese by default. Preserve meaning, key terms, formatting, and proper nouns. If the selected text is already Chinese, lightly polish it for clarity while preserving the original intent. Return only the translated or polished text.",
+      "builtIn": true,
+      "enabled": true
+    },
+    {
+      "id": "vibecoding-requirements",
+      "name": "Vibecoding Requirement Refiner",
+      "description": "",
+      "nameKey": "persona.vibecodingRequirements.name",
+      "descriptionKey": "persona.vibecodingRequirements.description",
+      "systemPrompt": "Rewrite rough developer or product intent into a clear vibecoding-ready requirement. Clarify goal, scope, expected behavior, constraints, edge cases, and acceptance criteria when they are implied. Keep the user's intent, avoid inventing unrelated features, and return a concise requirement statement in the user's language.",
+      "builtIn": true,
+      "enabled": true
     }
   ]
 }

@@ -12,6 +12,7 @@ pub struct PersonaConfig {
     #[serde(alias = "default_safe_persona_id")]
     pub default_safe_persona_id: String,
     pub items: Vec<PersonaConfigItem>,
+    pub deleted_built_in_persona_ids: Vec<String>,
 }
 
 impl Default for PersonaConfig {
@@ -20,6 +21,7 @@ impl Default for PersonaConfig {
         Self {
             default_safe_persona_id: catalog.default_safe_persona_id.clone(),
             items: catalog.personas.clone(),
+            deleted_built_in_persona_ids: Vec::new(),
         }
     }
 }
@@ -71,7 +73,13 @@ pub fn default_safe_persona_id() -> &'static str {
 
 pub fn normalize_config(config: &PersonaConfig) -> PersonaConfig {
     let mut normalized = config.clone();
-    normalized.items = merge_built_in_personas(&normalized.items);
+    normalized.deleted_built_in_persona_ids = normalized_deleted_built_in_ids(config);
+    normalized.items =
+        merge_built_in_personas(&normalized.items, &normalized.deleted_built_in_persona_ids);
+    if normalized.items.is_empty() {
+        normalized.deleted_built_in_persona_ids.clear();
+        normalized.items = merge_built_in_personas(&[], &normalized.deleted_built_in_persona_ids);
+    }
     ensure_enabled_persona(&mut normalized.items);
 
     if !has_enabled_persona(&normalized.items, &normalized.default_safe_persona_id) {
@@ -115,21 +123,41 @@ pub fn resolve_persona(
         })
 }
 
-fn merge_built_in_personas(items: &[PersonaConfigItem]) -> Vec<PersonaConfigItem> {
+fn merge_built_in_personas(
+    items: &[PersonaConfigItem],
+    deleted_built_in_persona_ids: &[String],
+) -> Vec<PersonaConfigItem> {
     let mut seen = HashSet::new();
     let mut merged = Vec::new();
+    let deleted_built_ins = deleted_built_in_persona_ids
+        .iter()
+        .map(String::as_str)
+        .collect::<HashSet<_>>();
+    let catalog_ids = persona_catalog()
+        .personas
+        .iter()
+        .map(|persona| persona.id.as_str())
+        .collect::<HashSet<_>>();
 
     for built_in in &persona_catalog().personas {
-        let mut persona = built_in.clone();
-        if let Some(configured) = items.iter().find(|item| item.id == built_in.id) {
-            persona.enabled = configured.enabled;
+        if deleted_built_ins.contains(built_in.id.as_str()) {
+            continue;
         }
+        let persona = items
+            .iter()
+            .find(|item| item.id == built_in.id && is_valid_persona(item))
+            .map(|configured| normalized_built_in_persona(configured, built_in))
+            .unwrap_or_else(|| built_in.clone());
+
         seen.insert(persona.id.clone());
         merged.push(persona);
     }
 
     for persona in items {
-        if !is_valid_persona(persona) || seen.contains(&persona.id) {
+        if !is_valid_persona(persona)
+            || seen.contains(&persona.id)
+            || catalog_ids.contains(persona.id.as_str())
+        {
             continue;
         }
 
@@ -142,9 +170,43 @@ fn merge_built_in_personas(items: &[PersonaConfigItem]) -> Vec<PersonaConfigItem
     merged
 }
 
+fn normalized_built_in_persona(
+    configured: &PersonaConfigItem,
+    built_in: &PersonaConfigItem,
+) -> PersonaConfigItem {
+    let mut persona = configured.clone();
+    persona.id = built_in.id.clone();
+    persona.built_in = true;
+    persona
+}
+
+fn normalized_deleted_built_in_ids(config: &PersonaConfig) -> Vec<String> {
+    let catalog_ids = persona_catalog()
+        .personas
+        .iter()
+        .map(|persona| persona.id.as_str())
+        .collect::<HashSet<_>>();
+    let mut seen = HashSet::new();
+    let mut deleted = Vec::new();
+
+    for persona_id in &config.deleted_built_in_persona_ids {
+        let persona_id = persona_id.trim();
+        if catalog_ids.contains(persona_id) && seen.insert(persona_id.to_string()) {
+            deleted.push(persona_id.to_string());
+        }
+    }
+
+    deleted
+}
+
 fn is_valid_persona(persona: &PersonaConfigItem) -> bool {
+    let has_name = !persona.name.trim().is_empty() || !persona.name_key.trim().is_empty();
+    let has_description =
+        !persona.description.trim().is_empty() || !persona.description_key.trim().is_empty();
+
     !persona.id.trim().is_empty()
-        && !persona.name.trim().is_empty()
+        && has_name
+        && has_description
         && !persona.system_prompt.trim().is_empty()
 }
 
@@ -181,13 +243,15 @@ mod tests {
     use super::{normalize_config, resolve_persona, PersonaConfig, PersonaConfigItem};
 
     #[test]
-    fn normalize_config_keeps_built_in_prompt_authoritative() {
+    fn normalize_config_preserves_built_in_user_edits() {
         let config = PersonaConfig {
             items: vec![PersonaConfigItem {
                 id: "clean-correction".to_string(),
                 name: "Changed".to_string(),
+                description: "Changed description".to_string(),
                 system_prompt: "Changed prompt".to_string(),
-                enabled: false,
+                enabled: true,
+                built_in: true,
                 ..PersonaConfigItem::default()
             }],
             ..PersonaConfig::default()
@@ -200,9 +264,56 @@ mod tests {
             .find(|persona| persona.id == "clean-correction")
             .expect("built-in clean correction persona should exist");
 
-        assert_eq!(clean.name, "Clean Correction");
-        assert_ne!(clean.system_prompt, "Changed prompt");
-        assert!(!clean.enabled);
+        assert_eq!(clean.name, "Changed");
+        assert_eq!(clean.description, "Changed description");
+        assert_eq!(clean.system_prompt, "Changed prompt");
+        assert!(clean.built_in);
+    }
+
+    #[test]
+    fn normalize_config_keeps_deleted_built_in_removed() {
+        let config = PersonaConfig {
+            deleted_built_in_persona_ids: vec!["translation-zh".to_string()],
+            ..PersonaConfig::default()
+        };
+
+        let normalized = normalize_config(&config);
+
+        assert!(normalized
+            .deleted_built_in_persona_ids
+            .contains(&"translation-zh".to_string()));
+        assert!(!normalized
+            .items
+            .iter()
+            .any(|persona| persona.id == "translation-zh"));
+    }
+
+    #[test]
+    fn normalize_config_adds_new_built_ins_when_not_deleted() {
+        let config = PersonaConfig {
+            items: vec![PersonaConfigItem {
+                id: "clean-correction".to_string(),
+                name: "Clean Correction".to_string(),
+                description: "Clean up writing.".to_string(),
+                system_prompt: "Prompt".to_string(),
+                enabled: true,
+                built_in: true,
+                ..PersonaConfigItem::default()
+            }],
+            deleted_built_in_persona_ids: Vec::new(),
+            ..PersonaConfig::default()
+        };
+
+        let normalized = normalize_config(&config);
+
+        assert!(normalized
+            .items
+            .iter()
+            .any(|persona| persona.id == "translation-zh"));
+        assert!(normalized
+            .items
+            .iter()
+            .any(|persona| persona.id == "vibecoding-requirements"));
     }
 
     #[test]
@@ -212,11 +323,13 @@ mod tests {
             items: vec![PersonaConfigItem {
                 id: "clean-correction".to_string(),
                 name: "Clean Correction".to_string(),
+                description: "Clean up writing.".to_string(),
                 system_prompt: "Prompt".to_string(),
                 enabled: false,
                 built_in: true,
                 ..PersonaConfigItem::default()
             }],
+            deleted_built_in_persona_ids: Vec::new(),
         };
 
         let normalized = normalize_config(&config);
@@ -234,6 +347,7 @@ mod tests {
             items: vec![PersonaConfigItem {
                 id: "custom-friendly".to_string(),
                 name: "Friendly".to_string(),
+                description: "Friendly rewrite".to_string(),
                 system_prompt: "Make it friendlier.".to_string(),
                 enabled: true,
                 ..PersonaConfigItem::default()

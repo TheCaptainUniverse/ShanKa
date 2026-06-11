@@ -14,6 +14,7 @@ export interface PersonaDefinition {
 export interface PersonaConfig {
   defaultSafePersonaId: string;
   items: PersonaDefinition[];
+  deletedBuiltInPersonaIds: string[];
 }
 
 interface PersonaCatalog {

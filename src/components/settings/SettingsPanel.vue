@@ -143,6 +143,7 @@ const recordingHotkeyField = ref<HotkeyField | null>(null);
 const personaConfig = ref<PersonaConfig>({
   defaultSafePersonaId: DEFAULT_SAFE_PERSONA_ID,
   items: [...BUILT_IN_PERSONAS],
+  deletedBuiltInPersonaIds: [],
 });
 const personasLoading = ref(false);
 const personasSaving = ref(false);
@@ -321,7 +322,7 @@ async function loadPersonas() {
   personaErrorKey.value = null;
 
   try {
-    personaConfig.value = await invoke<PersonaConfig>("get_persona_config");
+    personaConfig.value = normalizePersonaConfig(await invoke<PersonaConfig>("get_persona_config"));
     personasDirty.value = false;
     personaStatus.value = "idle";
     personaDraft.value = null;
@@ -423,9 +424,9 @@ async function savePersonas() {
   personaErrorKey.value = null;
 
   try {
-    personaConfig.value = await invoke<PersonaConfig>("save_persona_config", {
+    personaConfig.value = normalizePersonaConfig(await invoke<PersonaConfig>("save_persona_config", {
       personas: sanitizedPersonaConfig(),
-    });
+    }));
     personasDirty.value = false;
     personaStatus.value = "saved";
     personaDraft.value = null;
@@ -570,10 +571,6 @@ function startCreatePersona() {
 }
 
 function startEditPersona(persona: PersonaDefinition) {
-  if (persona.builtIn) {
-    return;
-  }
-
   personaDraft.value = {
     mode: "edit",
     originalId: persona.id,
@@ -689,9 +686,9 @@ function submitPersonaDraft() {
     name: draft.item.name.trim(),
     description: draft.item.description.trim(),
     systemPrompt: draft.item.systemPrompt.trim(),
-    nameKey: "",
-    descriptionKey: "",
-    builtIn: false,
+    nameKey: draft.item.builtIn ? draft.item.nameKey.trim() : "",
+    descriptionKey: draft.item.builtIn ? draft.item.descriptionKey.trim() : "",
+    builtIn: draft.item.builtIn,
     enabled: true,
   };
 
@@ -765,11 +762,12 @@ function togglePersona(persona: PersonaDefinition) {
 }
 
 function deletePersona(persona: PersonaDefinition) {
-  if (persona.builtIn) {
-    return;
-  }
-
   personaConfig.value.items = personaConfig.value.items.filter((item) => item.id !== persona.id);
+  if (persona.builtIn) {
+    personaConfig.value.deletedBuiltInPersonaIds = [
+      ...new Set([...personaConfig.value.deletedBuiltInPersonaIds, persona.id]),
+    ];
+  }
   if (personaConfig.value.defaultSafePersonaId === persona.id) {
     personaConfig.value.defaultSafePersonaId = nextEnabledPersonaId(persona.id);
   }
@@ -1012,6 +1010,17 @@ function sanitizedPersonaConfig(): PersonaConfig {
   return {
     defaultSafePersonaId,
     items,
+    deletedBuiltInPersonaIds: [
+      ...new Set(personaConfig.value.deletedBuiltInPersonaIds.map((id) => id.trim()).filter(Boolean)),
+    ],
+  };
+}
+
+function normalizePersonaConfig(config: PersonaConfig): PersonaConfig {
+  return {
+    defaultSafePersonaId: config.defaultSafePersonaId,
+    items: config.items,
+    deletedBuiltInPersonaIds: config.deletedBuiltInPersonaIds ?? [],
   };
 }
 
@@ -1132,11 +1141,11 @@ function formatPersonaError(error: unknown): TranslationKey {
 }
 
 function personaName(persona: PersonaDefinition) {
-  return persona.nameKey ? t(persona.nameKey as TranslationKey) : persona.name;
+  return persona.name.trim() || (persona.nameKey ? t(persona.nameKey as TranslationKey) : "");
 }
 
 function personaDescription(persona: PersonaDefinition) {
-  return persona.descriptionKey ? t(persona.descriptionKey as TranslationKey) : (persona.description ?? "");
+  return (persona.description ?? "").trim() || (persona.descriptionKey ? t(persona.descriptionKey as TranslationKey) : "");
 }
 </script>
 
@@ -1614,7 +1623,6 @@ function personaDescription(persona: PersonaDefinition) {
                   <Copy class="size-4" aria-hidden="true" />
                 </button>
                 <button
-                  v-if="!persona.builtIn"
                   class="inline-flex size-8 items-center justify-center rounded-md text-shanka-muted transition hover:bg-shanka-hover/5 hover:text-shanka-primary"
                   :title="t('settings.personas.edit')"
                   :aria-label="t('settings.personas.edit')"
@@ -1625,7 +1633,6 @@ function personaDescription(persona: PersonaDefinition) {
                   <Pencil class="size-4" aria-hidden="true" />
                 </button>
                 <button
-                  v-if="!persona.builtIn"
                   class="inline-flex size-8 items-center justify-center rounded-md text-shanka-muted transition hover:bg-shanka-hover/5 hover:text-shanka-danger disabled:cursor-not-allowed disabled:opacity-40"
                   :title="t('settings.personas.delete')"
                   :aria-label="t('settings.personas.delete')"

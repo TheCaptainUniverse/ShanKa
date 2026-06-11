@@ -292,10 +292,9 @@ fn normalized_personas(
     personas: &persona::PersonaConfig,
 ) -> Result<persona::PersonaConfig, ConfigError> {
     if personas.items.iter().any(|item| {
-        !item.built_in
-            && (item.name.trim().is_empty()
-                || item.description.trim().is_empty()
-                || item.system_prompt.trim().is_empty())
+        (item.name.trim().is_empty() && item.name_key.trim().is_empty())
+            || (item.description.trim().is_empty() && item.description_key.trim().is_empty())
+            || item.system_prompt.trim().is_empty()
     }) {
         return Err(ConfigError::InvalidPersonas(
             "name, description, and system prompt are required".to_string(),
