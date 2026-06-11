@@ -34,7 +34,7 @@ jobs:
       matrix:
         include:
           - name: Windows x64
-            platform: windows-latest
+            platform: windows-2022
             args: ""
             rustTarget: ""
           - name: Linux x64
@@ -46,7 +46,7 @@ jobs:
             args: "--target aarch64-apple-darwin"
             rustTarget: "aarch64-apple-darwin"
           - name: macOS Intel
-            platform: macos-latest
+            platform: macos-15-intel
             args: "--target x86_64-apple-darwin"
             rustTarget: "x86_64-apple-darwin"
 
@@ -85,7 +85,7 @@ jobs:
         run: bun install --frozen-lockfile
 
       - name: Build and upload release bundles
-        uses: tauri-apps/tauri-action@v1
+        uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
@@ -97,23 +97,23 @@ jobs:
           args: ${{ matrix.args }}
 
       - name: Smoke packaged executable
-        if: ${{ matrix.platform == 'windows-latest' && github.event_name == 'workflow_dispatch' && inputs.run_smoke }}
+        if: ${{ startsWith(matrix.platform, 'windows-') && github.event_name == 'workflow_dispatch' && inputs.run_smoke }}
         run: bun run release:smoke
 
       - name: Smoke manual text launcher
-        if: ${{ matrix.platform == 'windows-latest' && github.event_name == 'workflow_dispatch' && inputs.run_smoke }}
+        if: ${{ startsWith(matrix.platform, 'windows-') && github.event_name == 'workflow_dispatch' && inputs.run_smoke }}
         run: bun run release:manual-text-smoke
 
       - name: Smoke MSI package metadata
-        if: matrix.platform == 'windows-latest'
+        if: startsWith(matrix.platform, 'windows-')
         run: bun run release:msi-smoke
 
       - name: Generate release manifest
-        if: matrix.platform == 'windows-latest'
+        if: startsWith(matrix.platform, 'windows-')
         run: bun run release:manifest
 
       - name: Upload release manifest
-        if: matrix.platform == 'windows-latest'
+        if: startsWith(matrix.platform, 'windows-')
         uses: actions/upload-artifact@v4
         with:
           name: shanka-release-manifest
