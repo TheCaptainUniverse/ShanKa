@@ -52,7 +52,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Install Linux dependencies
         if: matrix.platform == 'ubuntu-22.04'
@@ -108,17 +108,3 @@ jobs:
       - name: Smoke MSI package metadata
         if: startsWith(matrix.platform, 'windows-')
         run: bun run release:msi-smoke
-
-      - name: Generate release manifest
-        id: release_manifest
-        if: startsWith(matrix.platform, 'windows-')
-        continue-on-error: true
-        run: bun run release:manifest
-
-      - name: Upload release manifest
-        if: startsWith(matrix.platform, 'windows-') && steps.release_manifest.outcome == 'success'
-        uses: actions/upload-artifact@v4
-        with:
-          name: shanka-release-manifest
-          if-no-files-found: error
-          path: docs/release/*.md
