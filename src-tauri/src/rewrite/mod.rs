@@ -92,7 +92,7 @@ struct ChatCompletionChoice {
 
 #[derive(Deserialize)]
 struct ChatCompletionMessage {
-    content: Option<String>,
+    content: Option<serde_json::Value>,
 }
 
 #[derive(Deserialize)]
@@ -113,6 +113,12 @@ enum OutputMode {
     Plain,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum PromptProfile {
+    Normal,
+    Recovery,
+}
+
 #[derive(Debug)]
 struct ProviderCallError {
     message: String,
@@ -120,6 +126,7 @@ struct ProviderCallError {
     retry_same: bool,
     timeout: bool,
     invalid_response: bool,
+    local_fallback: bool,
 }
 
 impl RewriteProvider for MockRewriteProvider {
@@ -289,9 +296,14 @@ async fn call_chat_completion_with_json_fallback(
     text: &str,
 ) -> Result<String, RewriteError> {
     if preferred_output_mode(settings) == OutputMode::Plain {
-        return call_chat_completion_with_retries(settings, mode, persona, text, OutputMode::Plain)
-            .await
-            .map_err(ProviderCallError::into_rewrite_error);
+        return call_chat_completion_or_local_fallback(
+            settings,
+            mode,
+            persona,
+            text,
+            OutputMode::Plain,
+        )
+        .await;
     }
 
     match call_chat_completion_with_retries(settings, mode, persona.clone(), text, OutputMode::Json)
@@ -304,9 +316,28 @@ async fn call_chat_completion_with_json_fallback(
                 "[rewrite] JSON mode failed; retrying plain content mode: {}",
                 error.message
             );
-            call_chat_completion_with_retries(settings, mode, persona, text, OutputMode::Plain)
+            call_chat_completion_or_local_fallback(settings, mode, persona, text, OutputMode::Plain)
                 .await
-                .map_err(ProviderCallError::into_rewrite_error)
+        }
+        Err(error) if error.local_fallback => {
+            Ok(local_rewrite_fallback(text, mode, &error.message))
+        }
+        Err(error) => Err(error.into_rewrite_error()),
+    }
+}
+
+async fn call_chat_completion_or_local_fallback(
+    settings: &config::AppSettingsConfig,
+    mode: SelectionMode,
+    persona: Option<persona::ResolvedPersona>,
+    text: &str,
+    output_mode: OutputMode,
+) -> Result<String, RewriteError> {
+    match call_chat_completion_with_retries(settings, mode, persona, text, output_mode).await {
+        Ok(output) => Ok(output),
+        Err(error) if error.timeout => Err(RewriteError::Timeout),
+        Err(error) if error.local_fallback => {
+            Ok(local_rewrite_fallback(text, mode, &error.message))
         }
         Err(error) => Err(error.into_rewrite_error()),
     }
@@ -347,9 +378,28 @@ async fn call_chat_completion_with_retries(
     output_mode: OutputMode,
 ) -> Result<String, ProviderCallError> {
     let max_attempts = 2;
+    let client = provider_http_client(settings)?;
+    let endpoint = chat_completion_endpoint(settings);
 
     for attempt in 1..=max_attempts {
-        match call_chat_completion(settings, mode, persona.clone(), text, output_mode).await {
+        let profile = if attempt == 1 {
+            PromptProfile::Normal
+        } else {
+            PromptProfile::Recovery
+        };
+
+        match call_chat_completion(
+            &client,
+            &endpoint,
+            settings,
+            mode,
+            persona.clone(),
+            text,
+            output_mode,
+            profile,
+        )
+        .await
+        {
             Ok(output) => return Ok(output),
             Err(error)
                 if error.retry_same
@@ -362,7 +412,6 @@ async fn call_chat_completion_with_retries(
                     output_mode.label(),
                     error.message
                 );
-                tokio::time::sleep(Duration::from_millis(180)).await;
             }
             Err(error) => return Err(error),
         }
@@ -403,35 +452,24 @@ async fn call_persona_generation_with_retries(
 }
 
 async fn call_chat_completion(
+    client: &reqwest::Client,
+    endpoint: &str,
     settings: &config::AppSettingsConfig,
     mode: SelectionMode,
     persona: Option<persona::ResolvedPersona>,
     text: &str,
     output_mode: OutputMode,
+    prompt_profile: PromptProfile,
 ) -> Result<String, ProviderCallError> {
-    let client = reqwest::Client::builder()
-        .timeout(Duration::from_millis(settings.timeout_ms))
-        .build()
-        .map_err(|error| {
-            ProviderCallError::remote(format!("failed to create HTTP client: {error}"))
-        })?;
-    let endpoint = format!(
-        "{}/chat/completions",
-        settings.base_url.trim_end_matches('/')
-    );
-
     let response = client
         .post(endpoint)
         .bearer_auth(&settings.api_key)
         .header(header::ACCEPT_ENCODING, "identity")
         .json(&ChatCompletionRequest {
             model: settings.model.clone(),
-            messages: rewrite_messages(mode, persona, text, output_mode),
-            temperature: match mode {
-                SelectionMode::Safe => 0.2,
-                SelectionMode::Magic => 0.7,
-            },
-            max_tokens: max_tokens_for_text(text),
+            messages: rewrite_messages(mode, persona, text, output_mode, prompt_profile),
+            temperature: rewrite_temperature(mode, prompt_profile),
+            max_tokens: max_tokens_for_text(text, prompt_profile),
             response_format: match output_mode {
                 OutputMode::Json => Some(ResponseFormat {
                     kind: "json_object",
@@ -468,6 +506,7 @@ async fn call_chat_completion(
             retry_same: response_status_is_transient(status.as_u16()),
             timeout: false,
             invalid_response: false,
+            local_fallback: response_status_is_transient(status.as_u16()),
         });
     }
 
@@ -477,12 +516,7 @@ async fn call_chat_completion(
             provider_body_debug_suffix(&body)
         ))
     })?;
-    let output = payload
-        .choices
-        .first()
-        .and_then(|choice| choice.message.content.as_deref())
-        .map(|content| content.trim().to_string())
-        .unwrap_or_default();
+    let output = chat_completion_output(&payload);
 
     let output = match output_mode {
         OutputMode::Json => parse_structured_rewrite(&output)?,
@@ -496,6 +530,7 @@ async fn call_chat_completion(
             retry_same: matches!(output_mode, OutputMode::Plain),
             timeout: false,
             invalid_response: true,
+            local_fallback: true,
         });
     }
 
@@ -564,6 +599,7 @@ async fn call_persona_generation(
             retry_same: response_status_is_transient(status.as_u16()),
             timeout: false,
             invalid_response: false,
+            local_fallback: false,
         });
     }
 
@@ -573,12 +609,7 @@ async fn call_persona_generation(
             provider_body_debug_suffix(&body)
         ))
     })?;
-    let content = payload
-        .choices
-        .first()
-        .and_then(|choice| choice.message.content.as_deref())
-        .map(|content| content.trim().to_string())
-        .unwrap_or_default();
+    let content = chat_completion_output(&payload);
 
     if content.is_empty() {
         return Err(ProviderCallError {
@@ -587,6 +618,7 @@ async fn call_persona_generation(
             retry_same: matches!(output_mode, OutputMode::Plain),
             timeout: false,
             invalid_response: true,
+            local_fallback: false,
         });
     }
 
@@ -599,6 +631,7 @@ async fn call_persona_generation(
         retry_same: false,
         timeout: false,
         invalid_response: true,
+        local_fallback: false,
     })?;
 
     if draft.description.trim().is_empty() || draft.system_prompt.trim().is_empty() {
@@ -608,6 +641,7 @@ async fn call_persona_generation(
             retry_same: matches!(output_mode, OutputMode::Plain),
             timeout: false,
             invalid_response: true,
+            local_fallback: false,
         });
     }
 
@@ -683,6 +717,7 @@ impl ProviderCallError {
             retry_same: false,
             timeout: true,
             invalid_response: false,
+            local_fallback: false,
         }
     }
 
@@ -693,6 +728,7 @@ impl ProviderCallError {
             retry_same: false,
             timeout: false,
             invalid_response: false,
+            local_fallback: false,
         }
     }
 
@@ -703,6 +739,7 @@ impl ProviderCallError {
             retry_same: true,
             timeout: false,
             invalid_response: false,
+            local_fallback: true,
         }
     }
 
@@ -713,6 +750,7 @@ impl ProviderCallError {
             retry_same: true,
             timeout: false,
             invalid_response: true,
+            local_fallback: true,
         }
     }
 
@@ -736,6 +774,7 @@ fn parse_structured_rewrite(content: &str) -> Result<String, ProviderCallError> 
             retry_same: false,
             timeout: false,
             invalid_response: true,
+            local_fallback: true,
         });
     }
 
@@ -748,6 +787,7 @@ fn parse_structured_rewrite(content: &str) -> Result<String, ProviderCallError> 
         retry_same: false,
         timeout: false,
         invalid_response: true,
+        local_fallback: true,
     })
 }
 
@@ -811,9 +851,89 @@ fn provider_test_error_category(status: u16, body: &str) -> &'static str {
     "PROVIDER_TEST_REMOTE"
 }
 
-fn max_tokens_for_text(text: &str) -> u32 {
+fn provider_http_client(
+    settings: &config::AppSettingsConfig,
+) -> Result<reqwest::Client, ProviderCallError> {
+    reqwest::Client::builder()
+        .timeout(Duration::from_millis(settings.timeout_ms))
+        .build()
+        .map_err(|error| {
+            ProviderCallError::remote(format!("failed to create HTTP client: {error}"))
+        })
+}
+
+fn chat_completion_endpoint(settings: &config::AppSettingsConfig) -> String {
+    format!(
+        "{}/chat/completions",
+        settings.base_url.trim_end_matches('/')
+    )
+}
+
+fn local_rewrite_fallback(text: &str, mode: SelectionMode, reason: &str) -> String {
+    println!(
+        "[rewrite] {} provider returned no usable rewrite; using original text as conservative fallback: {}",
+        mode.label(),
+        reason
+    );
+    normalize_text(text)
+}
+
+fn chat_completion_output(payload: &ChatCompletionResponse) -> String {
+    payload
+        .choices
+        .first()
+        .and_then(|choice| choice.message.content.as_ref())
+        .and_then(chat_completion_content_text)
+        .unwrap_or_default()
+        .trim()
+        .to_string()
+}
+
+fn chat_completion_content_text(content: &serde_json::Value) -> Option<String> {
+    match content {
+        serde_json::Value::String(text) => Some(text.clone()),
+        serde_json::Value::Array(parts) => {
+            let text = parts
+                .iter()
+                .filter_map(chat_completion_content_text)
+                .collect::<Vec<_>>()
+                .join("\n")
+                .trim()
+                .to_string();
+
+            if text.is_empty() {
+                None
+            } else {
+                Some(text)
+            }
+        }
+        serde_json::Value::Object(object) => object
+            .get("text")
+            .or_else(|| object.get("content"))
+            .and_then(chat_completion_content_text),
+        _ => None,
+    }
+}
+
+fn rewrite_temperature(mode: SelectionMode, prompt_profile: PromptProfile) -> f32 {
+    if matches!(prompt_profile, PromptProfile::Recovery) {
+        return 0.0;
+    }
+
+    match mode {
+        SelectionMode::Safe => 0.2,
+        SelectionMode::Magic => 0.7,
+    }
+}
+
+fn max_tokens_for_text(text: &str, prompt_profile: PromptProfile) -> u32 {
     let approximate_input_tokens = text.chars().count().saturating_div(2) as u32;
-    approximate_input_tokens.clamp(256, 4_096)
+    let minimum_tokens = match prompt_profile {
+        PromptProfile::Normal => 256,
+        PromptProfile::Recovery => 512,
+    };
+
+    approximate_input_tokens.clamp(minimum_tokens, 4_096)
 }
 
 fn response_body_sample(body: &[u8]) -> String {
@@ -919,6 +1039,7 @@ fn rewrite_messages(
     persona: Option<persona::ResolvedPersona>,
     text: &str,
     output_mode: OutputMode,
+    prompt_profile: PromptProfile,
 ) -> Vec<ChatMessage> {
     let base_instruction = match mode {
         SelectionMode::Safe if matches!(output_mode, OutputMode::Json) => {
@@ -934,12 +1055,21 @@ fn rewrite_messages(
             "You are Shanka Magic Mode. Improve the user's selected text more boldly: make it polished, expressive, and contextually useful while preserving the user's intent and language. Return only the rewritten text."
         }
     };
+    let recovery_instruction = match (prompt_profile, output_mode) {
+        (PromptProfile::Recovery, OutputMode::Json) => {
+            "\n\nRecovery instruction: the previous provider response was empty or malformed. Return a non-empty JSON object now. If the text already reads well, set \"text\" to the original selected text unchanged."
+        }
+        (PromptProfile::Recovery, OutputMode::Plain) => {
+            "\n\nRecovery instruction: the previous provider response was empty or malformed. Return non-empty rewritten text now. If the text already reads well, return the original selected text unchanged."
+        }
+        (PromptProfile::Normal, _) => "",
+    };
     let instruction = match persona {
         Some(persona) => format!(
-            "{base_instruction}\n\nTemporary persona: {}. {} Apply this persona for this rewrite only, while respecting the mode rules above.",
+            "{base_instruction}{recovery_instruction}\n\nTemporary persona: {}. {} Apply this persona for this rewrite only, while respecting the mode rules above.",
             persona.name, persona.system_prompt
         ),
-        None => base_instruction.to_string(),
+        None => format!("{base_instruction}{recovery_instruction}"),
     };
 
     vec![
@@ -999,9 +1129,13 @@ impl OutputMode {
 #[cfg(test)]
 mod tests {
     use super::{
-        config, parse_generated_persona_content, parse_structured_rewrite, preferred_output_mode,
-        OutputMode, ProviderCallError,
+        chat_completion_output, config, local_rewrite_fallback, max_tokens_for_text,
+        parse_generated_persona_content, parse_structured_rewrite, preferred_output_mode,
+        rewrite_messages, rewrite_temperature, ChatCompletionResponse, OutputMode, PromptProfile,
+        ProviderCallError,
     };
+    use crate::selection::SelectionMode;
+    use serde_json::json;
 
     #[test]
     fn preferred_output_mode_skips_json_for_deepseek_provider() {
@@ -1061,7 +1195,63 @@ mod tests {
     fn parse_structured_rewrite_marks_empty_json_content_as_plain_retryable() {
         let error = parse_structured_rewrite("").expect_err("empty content should fail");
 
-        assert_provider_error_flags(error, true, false, true);
+        assert_provider_error_flags(error, true, false, true, true);
+    }
+
+    #[test]
+    fn chat_completion_output_accepts_array_content_parts() {
+        let payload = serde_json::from_value::<ChatCompletionResponse>(json!({
+            "choices": [
+                {
+                    "message": {
+                        "content": [
+                            { "type": "text", "text": "专业技能" },
+                            { "type": "text", "text": "Python" }
+                        ]
+                    }
+                }
+            ]
+        }))
+        .expect("array content payload should parse");
+
+        assert_eq!(chat_completion_output(&payload), "专业技能\nPython");
+    }
+
+    #[test]
+    fn recovery_prompt_requires_non_empty_output() {
+        let messages = rewrite_messages(
+            SelectionMode::Safe,
+            None,
+            "专业技能",
+            OutputMode::Plain,
+            PromptProfile::Recovery,
+        );
+
+        assert!(messages[0]
+            .content
+            .contains("Return non-empty rewritten text"));
+        assert_eq!(
+            rewrite_temperature(SelectionMode::Magic, PromptProfile::Recovery),
+            0.0
+        );
+        assert_eq!(
+            max_tokens_for_text("专业技能", PromptProfile::Recovery),
+            512
+        );
+    }
+
+    #[test]
+    fn local_rewrite_fallback_returns_original_text() {
+        let output = local_rewrite_fallback("专业技能\n", SelectionMode::Safe, "empty response");
+
+        assert_eq!(output, "专业技能");
+    }
+
+    #[test]
+    fn retryable_remote_errors_can_use_local_fallback_after_retries() {
+        let error = ProviderCallError::retryable_remote("connection reset".to_string());
+
+        assert_provider_error_flags(error, false, true, false, true);
     }
 
     #[test]
@@ -1080,9 +1270,11 @@ mod tests {
         retry_plain: bool,
         retry_same: bool,
         invalid_response: bool,
+        local_fallback: bool,
     ) {
         assert_eq!(error.retry_plain, retry_plain);
         assert_eq!(error.retry_same, retry_same);
         assert_eq!(error.invalid_response, invalid_response);
+        assert_eq!(error.local_fallback, local_fallback);
     }
 }
