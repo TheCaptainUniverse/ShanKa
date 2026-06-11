@@ -2,6 +2,7 @@
 import { computed, onMounted, onUnmounted, ref } from "vue";
 import { invoke } from "@tauri-apps/api/core";
 import { emit } from "@tauri-apps/api/event";
+import { openUrl } from "@tauri-apps/plugin-opener";
 import {
   ChevronDown,
   CloudUpload,
@@ -25,6 +26,11 @@ import {
   X,
   Zap,
 } from "lucide-vue-next";
+import {
+  APP_LICENSE_NAME,
+  APP_LICENSE_URL,
+  APP_REPOSITORY_URL,
+} from "@/app/metadata";
 import { useI18n } from "@/i18n/useI18n";
 import type { Locale, TranslationKey } from "@/i18n/messages";
 import {
@@ -171,6 +177,9 @@ const historyErrorKey = ref<TranslationKey | null>(null);
 const appVersion = ref("");
 const savedProviderSettingsSignature = ref("");
 const testedProviderSettingsSignature = ref("");
+const repositoryUrl = APP_REPOSITORY_URL;
+const licenseName = APP_LICENSE_NAME;
+const licenseUrl = APP_LICENSE_URL;
 
 const localeLabels = computed<Record<Locale, string>>(() => ({
   "zh-CN": t("settings.locale.zh"),
@@ -323,6 +332,18 @@ async function openPlatformPermissionSettings() {
   } catch (error) {
     console.warn("[settings] failed to open platform permission settings", error);
     platformErrorKey.value = "settings.platform.openFailed";
+  }
+}
+
+async function openExternalUrl(url: string) {
+  if (!url) {
+    return;
+  }
+
+  try {
+    await openUrl(url);
+  } catch (error) {
+    console.warn("[settings] failed to open external URL", error);
   }
 }
 
@@ -1852,6 +1873,35 @@ function personaDescription(persona: PersonaDefinition) {
               <div class="flex items-start justify-between gap-4">
                 <span class="text-shanka-muted">{{ t("settings.about.magicMode") }}</span>
                 <span class="max-w-sm text-right text-shanka-secondary">{{ t("settings.about.magicModeDescription") }}</span>
+              </div>
+              <div class="flex items-center justify-between gap-4">
+                <span class="text-shanka-muted">{{ t("settings.about.repository") }}</span>
+                <button
+                  class="inline-flex min-w-0 items-center gap-1.5 text-right text-shanka-secondary transition hover:text-shanka-primary disabled:cursor-not-allowed disabled:text-shanka-muted"
+                  :disabled="!repositoryUrl"
+                  type="button"
+                  @click="openExternalUrl(repositoryUrl)"
+                >
+                  <span class="truncate">{{ repositoryUrl || t("settings.about.repositoryPending") }}</span>
+                  <ExternalLink v-if="repositoryUrl" class="size-3.5 shrink-0" aria-hidden="true" />
+                </button>
+              </div>
+              <div class="flex items-center justify-between gap-4">
+                <span class="text-shanka-muted">{{ t("settings.about.license") }}</span>
+                <button
+                  class="inline-flex min-w-0 items-center gap-1.5 text-right text-shanka-secondary transition hover:text-shanka-primary"
+                  type="button"
+                  @click="openExternalUrl(licenseUrl)"
+                >
+                  <span class="truncate">{{ licenseName }}</span>
+                  <ExternalLink class="size-3.5 shrink-0" aria-hidden="true" />
+                </button>
+              </div>
+              <div class="flex items-start justify-between gap-4">
+                <span class="text-shanka-muted">{{ t("settings.about.commercialUse") }}</span>
+                <span class="max-w-sm text-right text-shanka-secondary">
+                  {{ t("settings.about.commercialUseAllowed") }}
+                </span>
               </div>
             </div>
           </section>

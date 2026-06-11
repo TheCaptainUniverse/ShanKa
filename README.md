@@ -5,6 +5,10 @@ It is local-first by design: settings, personas, hotkeys, and optional rewrite
 history stay on your device, API keys live in the system keychain, and selected
 text is sent only when you explicitly trigger a rewrite.
 
+License note: Shanka is open source under the MIT License. Commercial use,
+modification, distribution, and private use are allowed as long as the copyright
+notice and license text are preserved.
+
 ## Using Shanka
 
 Shanka runs in the background and refines selected text from other desktop apps.
@@ -155,6 +159,15 @@ cleared from Settings.
 Logs avoid full selected text, provider response bodies, and complete API keys
 unless debug logging is enabled temporarily from Settings while diagnosing
 clipboard or provider issues.
+
+## License
+
+Shanka is distributed under the MIT License. You may use, copy, modify, merge,
+publish, distribute, sublicense, and sell copies of the software as long as the
+copyright notice and license text are included in all copies or substantial
+portions of the software.
+
+See [`LICENSE`](./LICENSE) for the full project terms.
 
 ## Architecture
 
