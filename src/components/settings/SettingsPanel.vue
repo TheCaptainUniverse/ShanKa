@@ -1143,7 +1143,10 @@ function personaDescription(persona: PersonaDefinition) {
 <template>
   <section class="mx-auto grid min-h-screen max-w-5xl grid-cols-[220px_1fr]">
     <aside class="sticky top-0 h-screen self-start overflow-y-auto border-r border-shanka-border px-3 py-5">
-      <div class="mb-5 px-2 text-sm font-medium text-shanka-primary">{{ t("app.name") }}</div>
+      <div class="mb-5 flex items-center gap-2 px-2 text-sm font-medium text-shanka-primary">
+        <img class="size-6 shrink-0 object-contain" src="/pure_logo.png" alt="" aria-hidden="true" />
+        <span>{{ t("app.name") }}</span>
+      </div>
       <nav class="space-y-1">
         <button
           v-for="item in navItems"
