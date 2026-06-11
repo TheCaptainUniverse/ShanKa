@@ -131,6 +131,11 @@ fn set_hotkey_recording_active(active: bool) {
 }
 
 #[tauri::command]
+fn update_tray_locale(locale: String) -> Result<(), String> {
+    tray::update_locale(&locale)
+}
+
+#[tauri::command]
 fn copy_safe_preview(
     app: tauri::AppHandle,
     preview_id: u64,
@@ -207,6 +212,7 @@ pub fn run() {
             save_hotkey_config,
             save_persona_config,
             set_hotkey_recording_active,
+            update_tray_locale,
             copy_safe_preview,
             replace_safe_preview,
             regenerate_safe_preview,
