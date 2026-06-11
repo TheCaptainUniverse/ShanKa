@@ -94,6 +94,7 @@ jobs:
           releaseBody: "Cross-platform Shanka desktop packages. This release is unsigned unless noted otherwise."
           releaseDraft: true
           prerelease: ${{ github.event_name == 'workflow_dispatch' && inputs.prerelease || false }}
+          tauriScript: bun run tauri
           args: ${{ matrix.args }}
 
       - name: Smoke packaged executable
