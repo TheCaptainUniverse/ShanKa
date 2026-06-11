@@ -141,6 +141,11 @@ fn update_tray_locale(locale: String) -> Result<(), String> {
 }
 
 #[tauri::command]
+fn update_settings_window_locale(app: tauri::AppHandle, locale: String) -> Result<(), String> {
+    window::update_settings_locale(&app, &locale)
+}
+
+#[tauri::command]
 fn copy_safe_preview(
     app: tauri::AppHandle,
     preview_id: u64,
@@ -224,6 +229,7 @@ pub fn run() {
             save_persona_config,
             set_hotkey_recording_active,
             update_tray_locale,
+            update_settings_window_locale,
             copy_safe_preview,
             replace_safe_preview,
             regenerate_safe_preview,

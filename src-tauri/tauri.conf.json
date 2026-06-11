@@ -12,7 +12,7 @@
   "app": {
     "windows": [
       {
-        "title": "Shanka Settings",
+        "title": "闪改设置",
         "width": 800,
         "height": 600,
         "visible": false

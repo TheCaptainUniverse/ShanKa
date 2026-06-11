@@ -117,6 +117,24 @@ pub fn show_settings_window(app: &tauri::AppHandle) {
     }
 }
 
+pub fn update_settings_locale(app: &tauri::AppHandle, locale: &str) -> Result<(), String> {
+    let Some(window) = app.get_webview_window(MAIN_WINDOW_LABEL) else {
+        return Ok(());
+    };
+
+    window
+        .set_title(settings_window_title_for_locale(locale))
+        .map_err(|error| format!("failed to update settings window title: {error}"))
+}
+
+fn settings_window_title_for_locale(locale: &str) -> &'static str {
+    if locale.to_ascii_lowercase().starts_with("en") {
+        "Shanka Settings"
+    } else {
+        "闪改设置"
+    }
+}
+
 fn install_settings_window_close_handler(app: &tauri::AppHandle) {
     let Some(window) = app.get_webview_window(MAIN_WINDOW_LABEL) else {
         println!("[window] settings window not found; close-to-tray handler not installed");
@@ -330,4 +348,21 @@ fn schedule_hud_hide(app: tauri::AppHandle, generation: u64) {
 
         hide_hud(&app);
     });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::settings_window_title_for_locale;
+
+    #[test]
+    fn settings_window_title_defaults_to_chinese() {
+        assert_eq!(settings_window_title_for_locale("zh-CN"), "闪改设置");
+        assert_eq!(settings_window_title_for_locale(""), "闪改设置");
+    }
+
+    #[test]
+    fn settings_window_title_supports_english() {
+        assert_eq!(settings_window_title_for_locale("en-US"), "Shanka Settings");
+        assert_eq!(settings_window_title_for_locale("en"), "Shanka Settings");
+    }
 }
