@@ -1858,72 +1858,108 @@ function personaDescription(persona: PersonaDefinition) {
         </form>
 
         <div v-else-if="selectedTab === 'about'" class="mt-6 space-y-5">
-          <section class="rounded-md border border-shanka-border px-3 py-3">
-            <div class="text-sm font-medium text-shanka-primary">{{ t("settings.about.title") }}</div>
-            <p class="mt-2 text-sm leading-6 text-shanka-secondary">{{ t("settings.about.description") }}</p>
-            <div class="mt-4 grid gap-2 text-sm">
-              <div class="flex items-center justify-between gap-4">
-                <span class="text-shanka-muted">{{ t("settings.about.version") }}</span>
-                <span class="text-shanka-primary">{{ appVersion || "0.1.0" }}</span>
+          <section class="overflow-hidden rounded-md border border-shanka-border">
+            <div class="flex flex-wrap items-start justify-between gap-4 px-4 py-4">
+              <div class="flex min-w-0 items-center gap-3">
+                <img class="size-12 shrink-0 object-contain" src="/pure_logo.png" alt="" aria-hidden="true" />
+                <div class="min-w-0">
+                  <div class="text-base font-semibold text-shanka-primary">{{ t("app.name") }}</div>
+                  <p class="mt-1 max-w-xl text-sm leading-6 text-shanka-secondary">{{ t("settings.about.description") }}</p>
+                </div>
               </div>
-              <div class="flex items-start justify-between gap-4">
-                <span class="text-shanka-muted">{{ t("settings.about.safeMode") }}</span>
-                <span class="max-w-sm text-right text-shanka-secondary">{{ t("settings.about.safeModeDescription") }}</span>
-              </div>
-              <div class="flex items-start justify-between gap-4">
-                <span class="text-shanka-muted">{{ t("settings.about.magicMode") }}</span>
-                <span class="max-w-sm text-right text-shanka-secondary">{{ t("settings.about.magicModeDescription") }}</span>
-              </div>
-              <div class="flex items-center justify-between gap-4">
-                <span class="text-shanka-muted">{{ t("settings.about.repository") }}</span>
-                <button
-                  class="inline-flex min-w-0 items-center gap-1.5 text-right text-shanka-secondary transition hover:text-shanka-primary disabled:cursor-not-allowed disabled:text-shanka-muted"
-                  :disabled="!repositoryUrl"
-                  type="button"
-                  @click="openExternalUrl(repositoryUrl)"
-                >
-                  <span class="truncate">{{ repositoryUrl || t("settings.about.repositoryPending") }}</span>
-                  <ExternalLink v-if="repositoryUrl" class="size-3.5 shrink-0" aria-hidden="true" />
-                </button>
-              </div>
-              <div class="flex items-center justify-between gap-4">
-                <span class="text-shanka-muted">{{ t("settings.about.license") }}</span>
-                <button
-                  class="inline-flex min-w-0 items-center gap-1.5 text-right text-shanka-secondary transition hover:text-shanka-primary"
-                  type="button"
-                  @click="openExternalUrl(licenseUrl)"
-                >
-                  <span class="truncate">{{ licenseName }}</span>
-                  <ExternalLink class="size-3.5 shrink-0" aria-hidden="true" />
-                </button>
-              </div>
-              <div class="flex items-start justify-between gap-4">
-                <span class="text-shanka-muted">{{ t("settings.about.commercialUse") }}</span>
-                <span class="max-w-sm text-right text-shanka-secondary">
-                  {{ t("settings.about.commercialUseAllowed") }}
-                </span>
-              </div>
+              <span class="rounded-md border border-shanka-border px-2 py-1 text-xs text-shanka-muted">
+                v{{ appVersion || "0.1.0" }}
+              </span>
             </div>
           </section>
 
-          <section class="rounded-md border border-shanka-border px-3 py-3">
-            <div class="text-sm font-medium text-shanka-primary">{{ t("settings.about.privacyTitle") }}</div>
-            <p class="mt-2 text-sm leading-6 text-shanka-secondary">{{ t("settings.about.privacy") }}</p>
+          <div class="grid gap-4 lg:grid-cols-[1.05fr_0.95fr]">
+            <section class="rounded-md border border-shanka-border px-4 py-4">
+              <div class="mb-3 text-sm font-medium text-shanka-primary">{{ t("settings.about.workflowTitle") }}</div>
+              <div class="divide-y divide-shanka-border">
+                <div class="flex gap-3 py-3 first:pt-0">
+                  <span class="inline-flex size-8 shrink-0 items-center justify-center rounded-md bg-shanka-input text-shanka-primary">
+                    <ShieldCheck class="size-4" aria-hidden="true" />
+                  </span>
+                  <div class="min-w-0">
+                    <div class="text-sm text-shanka-primary">{{ t("settings.about.safeMode") }}</div>
+                    <p class="mt-1 text-xs leading-5 text-shanka-muted">{{ t("settings.about.safeModeDescription") }}</p>
+                  </div>
+                </div>
+                <div class="flex gap-3 py-3 last:pb-0">
+                  <span class="inline-flex size-8 shrink-0 items-center justify-center rounded-md bg-shanka-input text-shanka-primary">
+                    <Zap class="size-4" aria-hidden="true" />
+                  </span>
+                  <div class="min-w-0">
+                    <div class="text-sm text-shanka-primary">{{ t("settings.about.magicMode") }}</div>
+                    <p class="mt-1 text-xs leading-5 text-shanka-muted">{{ t("settings.about.magicModeDescription") }}</p>
+                  </div>
+                </div>
+              </div>
+            </section>
+
+            <section class="rounded-md border border-shanka-border px-4 py-4">
+              <div class="mb-3 text-sm font-medium text-shanka-primary">{{ t("settings.about.openSourceTitle") }}</div>
+              <div class="space-y-3 text-sm">
+                <div class="flex items-start justify-between gap-4">
+                  <span class="text-shanka-muted">{{ t("settings.about.license") }}</span>
+                  <button
+                    class="inline-flex min-w-0 items-center gap-1.5 text-right text-shanka-secondary transition hover:text-shanka-primary"
+                    type="button"
+                    @click="openExternalUrl(licenseUrl)"
+                  >
+                    <span class="truncate">{{ licenseName }}</span>
+                    <ExternalLink class="size-3.5 shrink-0" aria-hidden="true" />
+                  </button>
+                </div>
+                <div class="flex items-start justify-between gap-4">
+                  <span class="text-shanka-muted">{{ t("settings.about.commercialUse") }}</span>
+                  <span class="max-w-55 text-right text-shanka-secondary">{{ t("settings.about.commercialUseAllowed") }}</span>
+                </div>
+                <div class="flex items-start justify-between gap-4">
+                  <span class="text-shanka-muted">{{ t("settings.about.repository") }}</span>
+                  <button
+                    class="inline-flex min-w-0 items-center gap-1.5 text-right text-shanka-secondary transition hover:text-shanka-primary disabled:cursor-not-allowed disabled:text-shanka-muted"
+                    :disabled="!repositoryUrl"
+                    type="button"
+                    @click="openExternalUrl(repositoryUrl)"
+                  >
+                    <span class="truncate">{{ repositoryUrl || t("settings.about.repositoryPending") }}</span>
+                    <ExternalLink v-if="repositoryUrl" class="size-3.5 shrink-0" aria-hidden="true" />
+                  </button>
+                </div>
+              </div>
+            </section>
+          </div>
+
+          <section class="rounded-md border border-shanka-border px-4 py-4">
+            <div class="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <div class="text-sm font-medium text-shanka-primary">{{ t("settings.about.privacyTitle") }}</div>
+                <p class="mt-1 text-xs text-shanka-muted">{{ t("settings.about.privacy") }}</p>
+              </div>
+            </div>
             <div class="mt-4 grid gap-2 sm:grid-cols-3">
-              <div class="rounded-md border border-shanka-border bg-shanka-input/40 p-3">
-                <HardDrive class="size-4 text-shanka-primary" aria-hidden="true" />
-                <div class="mt-2 text-xs font-medium text-shanka-primary">{{ t("settings.about.privacyLocalTitle") }}</div>
-                <p class="mt-1 text-xs leading-5 text-shanka-muted">{{ t("settings.about.privacyLocalDescription") }}</p>
+              <div class="flex gap-3 rounded-md bg-shanka-input/45 p-3">
+                <HardDrive class="mt-0.5 size-4 shrink-0 text-shanka-primary" aria-hidden="true" />
+                <div class="min-w-0">
+                  <div class="text-xs font-medium text-shanka-primary">{{ t("settings.about.privacyLocalTitle") }}</div>
+                  <p class="mt-1 text-xs leading-5 text-shanka-muted">{{ t("settings.about.privacyLocalDescription") }}</p>
+                </div>
               </div>
-              <div class="rounded-md border border-shanka-border bg-shanka-input/40 p-3">
-                <KeyRound class="size-4 text-shanka-primary" aria-hidden="true" />
-                <div class="mt-2 text-xs font-medium text-shanka-primary">{{ t("settings.about.privacyKeychainTitle") }}</div>
-                <p class="mt-1 text-xs leading-5 text-shanka-muted">{{ t("settings.about.privacyKeychainDescription") }}</p>
+              <div class="flex gap-3 rounded-md bg-shanka-input/45 p-3">
+                <KeyRound class="mt-0.5 size-4 shrink-0 text-shanka-primary" aria-hidden="true" />
+                <div class="min-w-0">
+                  <div class="text-xs font-medium text-shanka-primary">{{ t("settings.about.privacyKeychainTitle") }}</div>
+                  <p class="mt-1 text-xs leading-5 text-shanka-muted">{{ t("settings.about.privacyKeychainDescription") }}</p>
+                </div>
               </div>
-              <div class="rounded-md border border-shanka-border bg-shanka-input/40 p-3">
-                <CloudUpload class="size-4 text-shanka-primary" aria-hidden="true" />
-                <div class="mt-2 text-xs font-medium text-shanka-primary">{{ t("settings.about.privacySendTitle") }}</div>
-                <p class="mt-1 text-xs leading-5 text-shanka-muted">{{ t("settings.about.privacySendDescription") }}</p>
+              <div class="flex gap-3 rounded-md bg-shanka-input/45 p-3">
+                <CloudUpload class="mt-0.5 size-4 shrink-0 text-shanka-primary" aria-hidden="true" />
+                <div class="min-w-0">
+                  <div class="text-xs font-medium text-shanka-primary">{{ t("settings.about.privacySendTitle") }}</div>
+                  <p class="mt-1 text-xs leading-5 text-shanka-muted">{{ t("settings.about.privacySendDescription") }}</p>
+                </div>
               </div>
             </div>
           </section>
