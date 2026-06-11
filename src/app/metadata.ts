@@ -1,4 +1,4 @@
-export const APP_REPOSITORY_URL = "";
+export const APP_REPOSITORY_URL = "https://github.com/TheCaptainUniverse/ShanKa";
 
 export const APP_LICENSE_NAME = "MIT License";
 
