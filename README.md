@@ -1,47 +1,43 @@
-# Shanka
+# Shanka 闪改
 
-Shanka is a Tauri + Vue + Bun desktop app for system-level AI text refinement.
-It is local-first by design: settings, personas, hotkeys, and optional rewrite
-history stay on your device, API keys live in the system keychain, and selected
-text is sent only when you explicitly trigger a rewrite.
+[English](./README.en.md)
 
-License note: Shanka is open source under the MIT License. Commercial use,
-modification, distribution, and private use are allowed as long as the copyright
-notice and license text are preserved.
+闪改是一个基于 Tauri + Vue + Bun 的系统级 AI 文本改写桌面应用。
+它默认本地优先：设置、人格、快捷键和可选改写历史保存在本机，API Key
+保存在系统密钥链中，只有当你主动触发改写时，选中文本才会发送到你配置的
+AI 服务。
 
-## Using Shanka
+闪改使用 MIT License 开源。你可以商用、修改、分发或私有使用，但需要保留
+版权声明和许可证文本。
 
-Shanka runs in the background and refines selected text from other desktop apps.
-The first launch defaults to Chinese UI, and the language can be changed in
-Settings. Launching Shanka again activates the existing instance instead of
-starting a second background process.
+## 使用方式
 
-Default hotkeys:
+闪改在后台运行，可以改写其他桌面应用里的选中文本。首次启动默认使用中文界面，
+也可以在设置中切换语言。重复启动闪改会激活已有实例，而不会启动第二个后台进程。
 
-- Safe Mode: generate an editable diff preview above the cursor. You can review
-  what changed, switch to the result text, copy, replace, or regenerate before
-  it touches the original text.
-- Magic Mode: rewrite and replace the selected text directly.
+默认快捷键：
 
-The default hotkeys can be changed from Settings. During hotkey recording,
-Shanka pauses Safe/Magic triggers so recording a shortcut does not accidentally
-rewrite text.
+- 安心模式：在鼠标上方生成可编辑的差异预览。你可以查看改动、切换到结果文本、
+  复制、替换，或者换一种人格重新生成。
+- 闪改模式：直接改写并替换当前选中文本，适合确定要快速处理的场景。
 
-## First Setup
+快捷键可以在设置中修改。录制快捷键时，闪改会暂停安心/闪改模式触发，避免录制
+过程中误改文本。
 
-1. Open Shanka from the app window or system tray.
-2. Choose a provider preset such as DeepSeek, OpenAI, or OpenRouter.
-3. Enter the API key, Base URL, and model, then run the connection test.
-4. Optionally enable Launch at Login if Shanka should start with the system.
-5. Save the settings and select text in any desktop app.
-6. Trigger Safe Mode first to verify the preview flow before using Magic Mode.
+## 首次设置
 
-API keys are stored in the system keychain when available. The app config stores
-only a key reference, not the plaintext key.
+1. 从应用窗口或系统托盘打开闪改。
+2. 选择 DeepSeek、OpenAI、OpenRouter 等服务商预设。
+3. 填写 API Key、Base URL 和模型，然后运行连接测试。
+4. 如果希望随系统启动，可以开启开机启动。
+5. 保存设置后，在任意桌面应用中选中文本。
+6. 建议先触发安心模式，确认预览流程正常后再使用闪改模式。
 
-## Release Packages
+API Key 会尽量保存到系统密钥链。应用配置只保存密钥引用，不保存明文 Key。
 
-Build Windows packages with:
+## 构建发布包
+
+构建 Windows 包：
 
 ```bash
 bun run tauri build
@@ -52,57 +48,57 @@ bun run release:msi-smoke
 bun run release:manifest
 ```
 
-Current Windows outputs:
+当前 Windows 输出：
 
 - `src-tauri/target/release/bundle/msi/Shanka_0.1.0_x64_en-US.msi`
 - `src-tauri/target/release/bundle/nsis/Shanka_0.1.0_x64-setup.exe`
 
-Before testing a packaged build, close any existing `shanka.exe` process. A
-running development or old packaged instance can already own the global hotkeys.
-Use `bun run release:preflight` to run the full local release gate in one pass.
+测试打包版本前，请关闭已有的 `shanka.exe` 进程。开发版或旧打包版可能已经占用了
+全局快捷键。也可以使用下面的命令一次性运行本地发布检查：
 
-For manual Windows text-link testing, you can isolate test settings and history
-from your daily Shanka profile by starting the app with `SHANKA_CONFIG_DIR`:
+```bash
+bun run release:preflight
+```
+
+如果要隔离手动 Windows 文本链路测试环境，可以用 `SHANKA_CONFIG_DIR` 指定临时
+配置目录，避免污染日常配置：
 
 ```powershell
 $env:SHANKA_CONFIG_DIR="$env:TEMP\ShankaManualConfig"
 src-tauri\target\release\shanka.exe
 ```
 
-Close Shanka before returning to normal use, then remove the temporary directory
-when you no longer need the test profile.
+测试结束后关闭闪改，再删除临时目录。
 
-You can also launch a prepared manual test profile with fixtures:
+也可以启动带夹具的手动测试 profile：
 
 ```bash
 bun run release:manual-text-test
 ```
 
-It starts Shanka with mock rewrite settings, opens a Notepad fixture and browser
-fixture, prints the hotkeys to use for the Windows text-link checklist, and
-creates a prefilled report under `docs/release/manual/`.
+它会使用 mock 改写设置启动闪改，打开 Notepad 和浏览器测试夹具，打印 Windows
+文本链路检查需要使用的快捷键，并在 `docs/release/manual/` 下生成预填报告。
 
-Use `-OpenReport` when you want the generated report opened automatically:
+需要自动打开生成报告时：
 
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts\release-manual-text-test.ps1 -OpenReport
 ```
 
-Use `-CaptureLog` to save Shanka process stdout/stderr next to the generated
-manual report. This is useful when recording Blocker or High issues:
+需要把闪改进程 stdout/stderr 保存到报告目录时：
 
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts\release-manual-text-test.ps1 -CaptureLog
 ```
 
-## Development
+## 开发
 
 ```bash
 bun install
 bun run dev
 ```
 
-Useful commands:
+常用命令：
 
 ```bash
 bun run dev:web
@@ -115,7 +111,7 @@ bun run db:push
 bun run tauri build
 ```
 
-Before packaging a release, run:
+发布前建议运行：
 
 ```bash
 bun run check
@@ -127,51 +123,41 @@ bun run release:msi-smoke
 bun run release:manifest
 ```
 
-Or run the complete local release gate:
+或者运行完整本地发布检查：
 
 ```bash
 bun run release:preflight
 ```
 
-## Troubleshooting
+## 常见问题
 
-- No selected text: make sure the target app has an active text selection, then
-  try Safe Mode again.
-- Hotkey registration failed: another app may already use the shortcut. Record a
-  different shortcut from Settings.
-- Paste failed: if the target app is elevated on Windows, Shanka keeps the result
-  on the clipboard and shows a saved-to-clipboard state.
-- macOS input does not work: enable Accessibility permission for Shanka in
-  System Settings.
-- Linux behavior depends on the desktop session. X11 is the preferred validation
-  path; Wayland may limit global hotkeys and simulated input.
+- 未检测到选中文本：确认目标应用中存在有效文本选区，然后重新触发安心模式。
+- 快捷键注册失败：可能被系统或其他应用占用。请在设置中录制其他组合键。
+- 粘贴替换失败：如果 Windows 目标应用以管理员权限运行，闪改会把结果保存到剪贴板。
+- macOS 输入不可用：在系统设置中为闪改开启辅助功能权限。
+- Linux 行为取决于桌面会话。X11 是当前优先验证路径；Wayland 可能限制全局快捷键和模拟输入。
 
-## Local-First Privacy
+## 本地优先与隐私
 
-By default, Shanka keeps configuration, personas, hotkeys, and rewrite history
-on the local device. API keys are stored through the system keychain when
-available, and the app config stores only a key reference.
+闪改默认把配置、人格、快捷键和改写历史保存在本机。API Key 会尽量通过系统密钥链
+保存，配置文件只保留密钥引用。
 
-Selected text is sent only after you trigger Safe Mode or Magic Mode, and only
-to the provider endpoint you configured. Rewrite history can be disabled or
-cleared from Settings.
+选中文本只会在你触发安心模式或闪改模式后发送，并且只发送到你配置的服务商端点。
+改写历史可以在设置中关闭或清空。
 
-Logs avoid full selected text, provider response bodies, and complete API keys
-unless debug logging is enabled temporarily from Settings while diagnosing
-clipboard or provider issues.
+默认日志会避免输出完整选中文本、服务商响应正文和完整 API Key。排查剪贴板或服务商
+问题时，可以临时在设置中开启调试日志。
 
-## License
+## 开源协议
 
-Shanka is distributed under the MIT License. You may use, copy, modify, merge,
-publish, distribute, sublicense, and sell copies of the software as long as the
-copyright notice and license text are included in all copies or substantial
-portions of the software.
+闪改使用 MIT License。你可以使用、复制、修改、合并、发布、分发、再许可和销售
+本软件的副本，但需要在所有副本或实质性部分中包含版权声明和许可证文本。
 
-See [`LICENSE`](./LICENSE) for the full project terms.
+完整条款见 [`LICENSE`](./LICENSE)。
 
-## Architecture
+## 项目架构
 
-- `src/`: Vue 3 settings panel and HUD frontend.
-- `src-tauri/`: Rust system host for hotkeys, clipboard capture, input simulation, tray, windows, provider calls, keychain storage, local history, and rewrite workflow.
-- `server/`: Bun + Hono local service bus and Drizzle SQLite schema retained for development experiments; production rewrite currently runs in Rust without a sidecar.
-- `shared/`: shared contracts, events, modes, HUD statuses, and error codes.
+- `src/`：Vue 3 设置面板和 HUD 前端。
+- `src-tauri/`：Rust 系统宿主，负责全局快捷键、剪贴板捕获、输入模拟、托盘、窗口、服务商调用、密钥链、本地历史和改写流程。
+- `server/`：Bun + Hono 本地服务总线和 Drizzle SQLite schema，保留作开发实验；生产改写流程当前在 Rust 中运行，无需 sidecar。
+- `shared/`：共享契约、事件、模式、HUD 状态和错误码。
