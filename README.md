@@ -37,7 +37,29 @@ API Key 会尽量保存到系统密钥链。应用配置只保存密钥引用，
 
 ## 构建发布包
 
-构建 Windows 包：
+推荐使用 GitHub Actions 生成跨平台发布包。推送版本 tag 后，
+`.github/workflows/release.yml` 会在 Windows、Linux 和 macOS runner 上分别构建，
+并把产物上传到 GitHub Draft Release：
+
+```bash
+git tag v0.1.0
+git push origin v0.1.0
+```
+
+当前自动发布目标：
+
+- Windows x64：MSI 和 NSIS 安装包。
+- Linux x64：Tauri Linux bundle，具体格式由当前 Tauri bundler 输出决定。
+- macOS Apple Silicon：`aarch64-apple-darwin` bundle。
+- macOS Intel：`x86_64-apple-darwin` bundle。
+
+发布前建议先在 Windows 本机运行完整预检：
+
+```bash
+bun run release:preflight
+```
+
+也可以只构建本机 Windows 包：
 
 ```bash
 bun run tauri build
@@ -54,11 +76,7 @@ bun run release:manifest
 - `src-tauri/target/release/bundle/nsis/Shanka_0.1.0_x64-setup.exe`
 
 测试打包版本前，请关闭已有的 `shanka.exe` 进程。开发版或旧打包版可能已经占用了
-全局快捷键。也可以使用下面的命令一次性运行本地发布检查：
-
-```bash
-bun run release:preflight
-```
+全局快捷键。
 
 如果要隔离手动 Windows 文本链路测试环境，可以用 `SHANKA_CONFIG_DIR` 指定临时
 配置目录，避免污染日常配置：
@@ -115,18 +133,14 @@ bun run tauri build
 
 ```bash
 bun run check
-bun run tauri build
-bun run release:smoke
-bun run release:manual-text-smoke
-bun run release:install-smoke
-bun run release:msi-smoke
-bun run release:manifest
+bun run release:preflight
 ```
 
-或者运行完整本地发布检查：
+跨平台发布使用版本 tag 触发 GitHub Actions：
 
 ```bash
-bun run release:preflight
+git tag v0.1.0
+git push origin v0.1.0
 ```
 
 ## 常见问题

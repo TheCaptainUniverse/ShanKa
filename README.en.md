@@ -43,7 +43,29 @@ configuration stores only a key reference, not the plaintext key.
 
 ## Release Packages
 
-Build Windows packages:
+The recommended release path is GitHub Actions. Push a version tag and
+`.github/workflows/release.yml` builds on Windows, Linux, and macOS runners,
+then uploads the packages to a GitHub Draft Release:
+
+```bash
+git tag v0.1.0
+git push origin v0.1.0
+```
+
+Current automated release targets:
+
+- Windows x64: MSI and NSIS installers.
+- Linux x64: Tauri Linux bundles, depending on the current Tauri bundler output.
+- macOS Apple Silicon: `aarch64-apple-darwin` bundle.
+- macOS Intel: `x86_64-apple-darwin` bundle.
+
+Before publishing, run the full Windows local preflight:
+
+```bash
+bun run release:preflight
+```
+
+You can also build local Windows packages only:
 
 ```bash
 bun run tauri build
@@ -60,12 +82,7 @@ Current Windows outputs:
 - `src-tauri/target/release/bundle/nsis/Shanka_0.1.0_x64-setup.exe`
 
 Before testing packaged builds, close any existing `shanka.exe` process. A dev
-build or older package may already have registered the global hotkeys. You can
-also run the full local release check:
-
-```bash
-bun run release:preflight
-```
+build or older package may already have registered the global hotkeys.
 
 To isolate the manual Windows text-flow test environment, set
 `SHANKA_CONFIG_DIR` to a temporary config directory so your daily config is not
@@ -124,18 +141,14 @@ Recommended checks before release:
 
 ```bash
 bun run check
-bun run tauri build
-bun run release:smoke
-bun run release:manual-text-smoke
-bun run release:install-smoke
-bun run release:msi-smoke
-bun run release:manifest
+bun run release:preflight
 ```
 
-Or run the complete local release preflight:
+Cross-platform releases are triggered by version tags:
 
 ```bash
-bun run release:preflight
+git tag v0.1.0
+git push origin v0.1.0
 ```
 
 ## Troubleshooting
