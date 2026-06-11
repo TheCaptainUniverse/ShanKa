@@ -11,7 +11,9 @@ pub fn setup(app: &tauri::AppHandle) -> tauri::Result<()> {
         MenuItem::with_id(app, OPEN_SETTINGS_ID, "Open Settings", true, None::<&str>)?;
     let quit = MenuItem::with_id(app, QUIT_ID, "Quit Shanka", true, None::<&str>)?;
     let menu = Menu::with_items(app, &[&open_settings, &quit])?;
-    let icon = app.default_window_icon().cloned();
+    let icon = crate::app_icon::load()
+        .ok()
+        .or_else(|| app.default_window_icon().cloned());
 
     let mut tray = TrayIconBuilder::new()
         .menu(&menu)

@@ -1,3 +1,4 @@
+mod app_icon;
 mod autostart;
 mod bridge;
 mod clipboard;

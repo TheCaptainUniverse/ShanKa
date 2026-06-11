@@ -38,6 +38,7 @@ struct HudPositionState {
 }
 
 pub fn setup(app: &tauri::AppHandle) -> tauri::Result<()> {
+    apply_settings_window_icon(app);
     install_settings_window_close_handler(app);
     create_hud_window(app)?;
     println!("[window] settings and HUD window manager ready");
@@ -133,6 +134,24 @@ fn install_settings_window_close_handler(app: &tauri::AppHandle) {
     });
 }
 
+fn apply_settings_window_icon(app: &tauri::AppHandle) {
+    let Some(window) = app.get_webview_window(MAIN_WINDOW_LABEL) else {
+        println!("[window] settings window not found; app icon was not applied");
+        return;
+    };
+
+    match crate::app_icon::load() {
+        Ok(icon) => {
+            if let Err(error) = window.set_icon(icon) {
+                println!("[window] failed to apply settings window icon: {error}");
+            }
+        }
+        Err(error) => {
+            println!("[window] failed to load app icon: {error}");
+        }
+    }
+}
+
 fn create_hud_window(app: &tauri::AppHandle) -> tauri::Result<()> {
     if app.get_webview_window(HUD_WINDOW_LABEL).is_some() {
         return Ok(());
@@ -152,6 +171,12 @@ fn create_hud_window(app: &tauri::AppHandle) -> tauri::Result<()> {
             .focused(false)
             .visible(false)
             .build()?;
+
+    if let Ok(icon) = crate::app_icon::load() {
+        if let Err(error) = window.set_icon(icon) {
+            println!("[window] failed to apply HUD window icon: {error}");
+        }
+    }
 
     if let Err(error) = window.set_ignore_cursor_events(true) {
         println!("[window] failed to enable HUD click-through: {error}");
