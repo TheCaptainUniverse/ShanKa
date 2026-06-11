@@ -3,9 +3,10 @@ import { computed, onMounted, onUnmounted, ref } from "vue";
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import { Check, ChevronDown, Copy, LoaderCircle, RefreshCw, Replace, Search, Undo2, X } from "lucide-vue-next";
+import { Check, ChevronDown, Copy, FileDiff, LoaderCircle, PenLine, RefreshCw, Replace, Search, Undo2, X } from "lucide-vue-next";
 import { useI18n } from "@/i18n/useI18n";
 import { personaDisplayName } from "@/personas/display";
+import { buildTextDiff, diffStats, type DiffPart } from "@/hud/diff";
 import {
   hudErrorMessageKey,
   hudMessageKey,
@@ -32,6 +33,7 @@ const personaSearch = ref("");
 const personaSelectOpen = ref(false);
 const busyAction = ref<PreviewAction | null>(null);
 const editablePreviewText = ref("");
+const previewView = ref<"diff" | "result">("diff");
 const undoCopying = ref(false);
 let unlistenHud: UnlistenFn | null = null;
 let unlistenFocus: UnlistenFn | null = null;
@@ -40,6 +42,7 @@ let unlistenPersonas: UnlistenFn | null = null;
 const message = computed(() => t(hudMessageKey(currentHud.value)));
 
 const previewText = computed(() => currentHud.value.message ?? "");
+const originalText = computed(() => currentHud.value.originalText ?? "");
 const previewId = computed(() => currentHud.value.previewId ?? null);
 const isRefining = computed(() => currentHud.value.status === "refining");
 const isError = computed(() => currentHud.value.status === "error");
@@ -48,6 +51,10 @@ const isUndoAvailable = computed(() => currentHud.value.status === "undo_availab
 const previewErrorMessage = computed(() =>
   isPreview.value && currentHud.value.errorCode ? t(hudErrorMessageKey(currentHud.value.errorCode)) : "",
 );
+const diffParts = computed<DiffPart[]>(() => buildTextDiff(originalText.value, editablePreviewText.value));
+const currentDiffStats = computed(() => diffStats(diffParts.value));
+const hasDiff = computed(() => currentDiffStats.value.added > 0 || currentDiffStats.value.removed > 0);
+const canShowDiff = computed(() => originalText.value !== "");
 const selectedPersona = computed(
   () =>
     personaOptions.value.find((persona) => persona.id === selectedPersonaId.value) ??
@@ -137,10 +144,12 @@ function applyHudUpdate(update: HudUpdate) {
   if (update.status === "preview") {
     if (shouldResetEditablePreviewText(update, previousPreviewId)) {
       editablePreviewText.value = update.message ?? "";
+      previewView.value = update.originalText ? "diff" : "result";
     }
     void loadPersonaConfig();
   } else {
     editablePreviewText.value = "";
+    previewView.value = "diff";
   }
 
   if (update.personaId) {
@@ -230,15 +239,70 @@ function handleKeydown(event: KeyboardEvent) {
     void dismissPreview();
   }
 }
+
+function diffPartClass(kind: DiffPart["kind"]) {
+  switch (kind) {
+    case "added":
+      return "bg-shanka-success/15 text-shanka-primary ring-1 ring-inset ring-shanka-success/25";
+    case "removed":
+      return "bg-shanka-danger/10 text-shanka-muted line-through decoration-shanka-danger/70 ring-1 ring-inset ring-shanka-danger/20";
+    case "equal":
+    default:
+      return "text-shanka-secondary";
+  }
+}
 </script>
 
 <template>
   <div
     v-if="isPreview"
-    class="relative flex h-[212px] w-[404px] flex-col overflow-hidden rounded-lg border border-shanka-border bg-shanka-panel text-shanka-primary shadow-2xl"
+    class="relative flex h-[272px] w-[504px] flex-col overflow-hidden rounded-lg border border-shanka-border bg-shanka-panel text-shanka-primary shadow-2xl"
   >
+    <div class="flex h-11 items-center justify-between gap-3 border-b border-shanka-border px-3">
+      <div class="inline-flex h-8 rounded-md bg-shanka-input p-0.5 text-xs text-shanka-muted">
+        <button
+          class="inline-flex items-center gap-1.5 rounded px-2.5 transition-colors"
+          :class="previewView === 'diff' ? 'bg-shanka-panel text-shanka-primary shadow-sm' : 'hover:text-shanka-primary'"
+          :disabled="!canShowDiff"
+          type="button"
+          @click="previewView = 'diff'"
+        >
+          <FileDiff class="size-3.5" aria-hidden="true" />
+          <span>{{ t("hud.preview.diff") }}</span>
+        </button>
+        <button
+          class="inline-flex items-center gap-1.5 rounded px-2.5 transition-colors"
+          :class="previewView === 'result' ? 'bg-shanka-panel text-shanka-primary shadow-sm' : 'hover:text-shanka-primary'"
+          type="button"
+          @click="previewView = 'result'"
+        >
+          <PenLine class="size-3.5" aria-hidden="true" />
+          <span>{{ t("hud.preview.result") }}</span>
+        </button>
+      </div>
+
+      <div class="flex min-w-0 items-center gap-2 text-[11px] text-shanka-muted">
+        <span v-if="hasDiff" class="whitespace-nowrap text-shanka-success">+{{ currentDiffStats.added }}</span>
+        <span v-if="hasDiff" class="whitespace-nowrap text-shanka-danger">-{{ currentDiffStats.removed }}</span>
+        <span v-if="!hasDiff" class="truncate">{{ t("hud.preview.noChanges") }}</span>
+      </div>
+    </div>
+
     <div class="min-h-0 flex-1 px-3 py-3">
+      <div
+        v-if="previewView === 'diff'"
+        class="h-full overflow-y-auto whitespace-pre-wrap break-words rounded-md bg-shanka-input/45 px-3 py-2 text-[13px] leading-6"
+      >
+        <template v-for="(part, index) in diffParts" :key="`${index}-${part.kind}`">
+          <span
+            v-if="part.text"
+            class="rounded px-0.5 py-px"
+            :class="diffPartClass(part.kind)"
+          >{{ part.text }}</span>
+        </template>
+      </div>
       <textarea
+        v-else
         v-model="editablePreviewText"
         class="h-full w-full resize-none bg-transparent text-[13px] leading-5 text-shanka-secondary outline-none placeholder:text-shanka-muted disabled:opacity-70"
         :disabled="busyAction !== null"
@@ -297,41 +361,41 @@ function handleKeydown(event: KeyboardEvent) {
       </div>
 
       <div class="flex items-center justify-end gap-1">
-      <button
-        class="inline-flex size-8 items-center justify-center rounded-md text-shanka-muted transition-colors hover:bg-shanka-input hover:text-shanka-primary disabled:cursor-default disabled:opacity-50"
-        type="button"
-        :title="t('hud.action.copy')"
-        :aria-label="t('hud.action.copy')"
-        :disabled="busyAction !== null"
-        @click="runPreviewAction('copy')"
-      >
-        <LoaderCircle v-if="busyAction === 'copy'" class="size-4 animate-spin" />
-        <Copy v-else class="size-4" />
-      </button>
+        <button
+          class="inline-flex size-8 items-center justify-center rounded-md text-shanka-muted transition-colors hover:bg-shanka-input hover:text-shanka-primary disabled:cursor-default disabled:opacity-50"
+          type="button"
+          :title="t('hud.action.copy')"
+          :aria-label="t('hud.action.copy')"
+          :disabled="busyAction !== null"
+          @click="runPreviewAction('copy')"
+        >
+          <LoaderCircle v-if="busyAction === 'copy'" class="size-4 animate-spin" />
+          <Copy v-else class="size-4" />
+        </button>
 
-      <button
-        class="inline-flex size-8 items-center justify-center rounded-md text-shanka-muted transition-colors hover:bg-shanka-input hover:text-shanka-primary disabled:cursor-default disabled:opacity-50"
-        type="button"
-        :title="t('hud.action.regenerate')"
-        :aria-label="t('hud.action.regenerate')"
-        :disabled="busyAction !== null"
-        @click="runPreviewAction('regenerate')"
-      >
-        <LoaderCircle v-if="busyAction === 'regenerate'" class="size-4 animate-spin" />
-        <RefreshCw v-else class="size-4" />
-      </button>
+        <button
+          class="inline-flex size-8 items-center justify-center rounded-md text-shanka-muted transition-colors hover:bg-shanka-input hover:text-shanka-primary disabled:cursor-default disabled:opacity-50"
+          type="button"
+          :title="t('hud.action.regenerate')"
+          :aria-label="t('hud.action.regenerate')"
+          :disabled="busyAction !== null"
+          @click="runPreviewAction('regenerate')"
+        >
+          <LoaderCircle v-if="busyAction === 'regenerate'" class="size-4 animate-spin" />
+          <RefreshCw v-else class="size-4" />
+        </button>
 
-      <button
-        class="inline-flex size-8 items-center justify-center rounded-md bg-shanka-primary text-shanka-canvas transition-colors hover:opacity-90 disabled:cursor-default disabled:opacity-50"
-        type="button"
-        :title="t('hud.action.replace')"
-        :aria-label="t('hud.action.replace')"
-        :disabled="busyAction !== null"
-        @click="runPreviewAction('replace')"
-      >
-        <LoaderCircle v-if="busyAction === 'replace'" class="size-4 animate-spin" />
-        <Replace v-else class="size-4" />
-      </button>
+        <button
+          class="inline-flex size-8 items-center justify-center rounded-md bg-shanka-primary text-shanka-canvas transition-colors hover:opacity-90 disabled:cursor-default disabled:opacity-50"
+          type="button"
+          :title="t('hud.action.replace')"
+          :aria-label="t('hud.action.replace')"
+          :disabled="busyAction !== null"
+          @click="runPreviewAction('replace')"
+        >
+          <LoaderCircle v-if="busyAction === 'replace'" class="size-4 animate-spin" />
+          <Replace v-else class="size-4" />
+        </button>
       </div>
     </div>
   </div>

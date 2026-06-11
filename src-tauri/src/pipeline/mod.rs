@@ -228,6 +228,7 @@ pub fn regenerate_safe_preview(app: tauri::AppHandle, preview_id: u64, persona_i
         hud::preview(
             &app,
             next_preview.id,
+            next_preview.original_text.clone(),
             next_preview.replacement_text.clone(),
             next_preview.persona_id.clone(),
         );
@@ -276,6 +277,7 @@ fn run_safe_preview(app: &tauri::AppHandle) -> Result<PipelineOutcome, PipelineE
     hud::preview(
         app,
         preview_id,
+        selection.original_text.clone(),
         selection.replacement_text.clone(),
         persona_id.clone(),
     );
@@ -519,6 +521,7 @@ fn show_safe_preview_error(
     hud::preview_error(
         app,
         preview.id,
+        preview.original_text,
         preview.replacement_text,
         preview.persona_id,
         error_code,

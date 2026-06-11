@@ -47,6 +47,7 @@ export interface RefineResponse {
 export interface HudUpdate {
   status: HudStatus;
   message?: string;
+  originalText?: string | null;
   errorCode?: ErrorCode | null;
   previewId?: number | null;
   personaId?: string | null;

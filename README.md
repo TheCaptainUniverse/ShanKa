@@ -1,6 +1,9 @@
 # Shanka
 
 Shanka is a Tauri + Vue + Bun desktop app for system-level AI text refinement.
+It is local-first by design: settings, personas, hotkeys, and optional rewrite
+history stay on your device, API keys live in the system keychain, and selected
+text is sent only when you explicitly trigger a rewrite.
 
 ## Using Shanka
 
@@ -11,8 +14,9 @@ starting a second background process.
 
 Default hotkeys:
 
-- Safe Mode: generate an editable preview above the cursor. You can copy,
-  replace, or regenerate the result before it touches the original text.
+- Safe Mode: generate an editable diff preview above the cursor. You can review
+  what changed, switch to the result text, copy, replace, or regenerate before
+  it touches the original text.
 - Magic Mode: rewrite and replace the selected text directly.
 
 The default hotkeys can be changed from Settings. During hotkey recording,
@@ -138,10 +142,18 @@ bun run release:preflight
 - Linux behavior depends on the desktop session. X11 is the preferred validation
   path; Wayland may limit global hotkeys and simulated input.
 
-## Privacy
+## Local-First Privacy
 
-By default, logs avoid full selected text, provider response bodies, and complete
-API keys. Debug logging can be enabled temporarily from Settings when diagnosing
+By default, Shanka keeps configuration, personas, hotkeys, and rewrite history
+on the local device. API keys are stored through the system keychain when
+available, and the app config stores only a key reference.
+
+Selected text is sent only after you trigger Safe Mode or Magic Mode, and only
+to the provider endpoint you configured. Rewrite history can be disabled or
+cleared from Settings.
+
+Logs avoid full selected text, provider response bodies, and complete API keys
+unless debug logging is enabled temporarily from Settings while diagnosing
 clipboard or provider issues.
 
 ## Architecture

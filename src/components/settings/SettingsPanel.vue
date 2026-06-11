@@ -4,8 +4,11 @@ import { invoke } from "@tauri-apps/api/core";
 import { emit } from "@tauri-apps/api/event";
 import {
   ChevronDown,
+  CloudUpload,
   Copy,
   ExternalLink,
+  HardDrive,
+  KeyRound,
   Keyboard,
   LoaderCircle,
   Pencil,
@@ -1856,6 +1859,23 @@ function personaDescription(persona: PersonaDefinition) {
           <section class="rounded-md border border-shanka-border px-3 py-3">
             <div class="text-sm font-medium text-shanka-primary">{{ t("settings.about.privacyTitle") }}</div>
             <p class="mt-2 text-sm leading-6 text-shanka-secondary">{{ t("settings.about.privacy") }}</p>
+            <div class="mt-4 grid gap-2 sm:grid-cols-3">
+              <div class="rounded-md border border-shanka-border bg-shanka-input/40 p-3">
+                <HardDrive class="size-4 text-shanka-primary" aria-hidden="true" />
+                <div class="mt-2 text-xs font-medium text-shanka-primary">{{ t("settings.about.privacyLocalTitle") }}</div>
+                <p class="mt-1 text-xs leading-5 text-shanka-muted">{{ t("settings.about.privacyLocalDescription") }}</p>
+              </div>
+              <div class="rounded-md border border-shanka-border bg-shanka-input/40 p-3">
+                <KeyRound class="size-4 text-shanka-primary" aria-hidden="true" />
+                <div class="mt-2 text-xs font-medium text-shanka-primary">{{ t("settings.about.privacyKeychainTitle") }}</div>
+                <p class="mt-1 text-xs leading-5 text-shanka-muted">{{ t("settings.about.privacyKeychainDescription") }}</p>
+              </div>
+              <div class="rounded-md border border-shanka-border bg-shanka-input/40 p-3">
+                <CloudUpload class="size-4 text-shanka-primary" aria-hidden="true" />
+                <div class="mt-2 text-xs font-medium text-shanka-primary">{{ t("settings.about.privacySendTitle") }}</div>
+                <p class="mt-1 text-xs leading-5 text-shanka-muted">{{ t("settings.about.privacySendDescription") }}</p>
+              </div>
+            </div>
           </section>
         </div>
       </div>

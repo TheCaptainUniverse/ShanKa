@@ -289,8 +289,8 @@ fn clamped_hud_position(
 fn layout_for_status(status: &str) -> HudLayout {
     if status == "preview" {
         return HudLayout {
-            width: 420.0,
-            height: 228.0,
+            width: 520.0,
+            height: 288.0,
             vertical_offset: 10.0,
             interactive: true,
         };
